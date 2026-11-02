@@ -24,10 +24,15 @@ var Types = map[string]bool{
 	LogsRead: true, FilesList: true, FilesRead: true, FilesWrite: true, FilesMkdir: true, FilesDelete: true,
 	UsersList: true, SSHKeysList: true, SSHKeysAdd: true, SSHKeysRemove: true, CronList: true, TimeInfo: true,
 	HostnameSet: true, TimezoneSet: true,
+	DockerInfo: true, DockerContainers: true, DockerContainerAction: true, DockerContainerLogs: true, DockerContainerRun: true,
+	DockerImages: true, DockerImagePull: true, DockerImageRemove: true, DockerImagesPrune: true, DockerVolumes: true, DockerNetworks: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
 func ReadOnly(typ string) bool {
+	if dockerTask(typ) {
+		return dockerReadOnly(typ)
+	}
 	switch typ {
 	case ServicesList, ProcessesList, LogsRead, FilesList, FilesRead, UsersList, SSHKeysList, CronList, TimeInfo:
 		return true
@@ -104,6 +109,9 @@ func Validate(typ string, params json.RawMessage) error {
 		return validateLogs(params)
 	case FilesList, FilesRead, FilesWrite, FilesMkdir, FilesDelete:
 		return validateFiles(typ, params)
+	case DockerInfo, DockerContainers, DockerContainerAction, DockerContainerLogs, DockerContainerRun,
+		DockerImages, DockerImagePull, DockerImageRemove, DockerImagesPrune, DockerVolumes, DockerNetworks:
+		return validateDocker(typ, params)
 	default:
 		return validateSystem(typ, params)
 	}

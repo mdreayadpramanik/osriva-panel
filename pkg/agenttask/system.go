@@ -38,12 +38,17 @@ func Class(typ string) string {
 		return ClassAccess
 	case typ == ServiceAction || typ == HostnameSet || typ == TimezoneSet:
 		return ClassOperate
+	case dockerTask(typ) && !dockerReadOnly(typ):
+		return ClassOperate
 	}
 	return ClassRead
 }
 
 // NeedsReauth reports whether a task requires a fresh password confirmation.
 func NeedsReauth(typ string, params json.RawMessage) bool {
+	if dockerTask(typ) {
+		return dockerReauth(typ, params)
+	}
 	switch typ {
 	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet:
 		return true

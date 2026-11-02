@@ -239,9 +239,9 @@ export type ProcessItem = { pid: number; ppid: number; name: string; user?: stri
 export type ProcessesResult = { processes: ProcessItem[]; truncated?: boolean };
 
 /** Queues a typed task and waits until the agent reports a result. Throws with the agent's error on failure. */
-export async function runTask<R>(serverId: string, type: string, params: Record<string, unknown> = {}): Promise<R> {
+export async function runTask<R>(serverId: string, type: string, params: Record<string, unknown> = {}, rounds = 6): Promise<R> {
   let task = await api<Task<R>>(`/servers/${serverId}/tasks`, { method: "POST", body: { type, params } });
-  for (let i = 0; i < 6 && (task.status === "queued" || task.status === "running"); i++) {
+  for (let i = 0; i < rounds && (task.status === "queued" || task.status === "running"); i++) {
     task = await api<Task<R>>(`/servers/${serverId}/tasks/${task.id}?wait=20`);
   }
   if (task.status === "succeeded") return task.result as R;
@@ -250,3 +250,33 @@ export async function runTask<R>(serverId: string, type: string, params: Record<
   }
   throw new ApiError(502, `task_${task.status}`, task.error || `Task ${task.status}.`);
 }
+
+export type DockerInfo = {
+  available: boolean;
+  reason?: string;
+  version?: string;
+  api_version?: string;
+  os?: string;
+  storage_driver?: string;
+  containers: number;
+  containers_running: number;
+  images: number;
+  cpus?: number;
+  memory_bytes?: number;
+};
+export type DockerPort = { ip?: string; private_port: number; public_port?: number; type: string };
+export type DockerContainer = {
+  id: string;
+  name: string;
+  image: string;
+  state: string;
+  status: string;
+  created: string;
+  ports: DockerPort[];
+  compose_project?: string;
+  protected?: boolean;
+};
+export type DockerImage = { id: string; tags: string[]; size: number; created: string; in_use: boolean };
+export type DockerVolume = { name: string; driver: string; mountpoint?: string };
+export type DockerNetwork = { id: string; name: string; driver: string; scope: string };
+export type DockerLogLine = { stream: string; time?: string; text: string };

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +98,16 @@ func RedactedParams(params json.RawMessage) map[string]any {
 	if c, ok := md["content"].(string); ok {
 		delete(md, "content")
 		md["content_bytes"] = len(c)
+	}
+	// Container environment variables often carry passwords: keep only the names.
+	if env, ok := md["env"].(map[string]any); ok {
+		names := make([]string, 0, len(env))
+		for k := range env {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		delete(md, "env")
+		md["env_names"] = names
 	}
 	return md
 }

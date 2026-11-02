@@ -136,6 +136,12 @@ try {
     $k = Run-Task 'sshkeys.list' @{ user = 'runneradmin' }
     if ($k.status -ne 'failed' -or $k.error -notlike '*not supported*') { throw 'sshkeys.list should be unsupported on Windows' }
 
+    Step 'Docker is reported as unsupported on Windows (no false claims)'
+    $d = Run-Task 'docker.info'
+    if ($d.status -ne 'succeeded' -or $d.result.available -or $d.result.reason -notlike '*not supported*') { throw "docker.info: $($d | ConvertTo-Json -Depth 4 -Compress)" }
+    $dc = Run-Task 'docker.containers'
+    if ($dc.status -ne 'failed') { throw 'docker.containers should fail on Windows' }
+
     Step 'live metrics arrive'
     Wait-Until 90 'metrics with CPU and memory' {
         $m = Api Get "/servers/$id/metrics?minutes=10"

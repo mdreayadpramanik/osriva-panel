@@ -73,11 +73,11 @@ wait_for 90 "server online" is_online
 api GET "/servers/$SERVER_ID" | jq -e '.inventory.os.family == "linux" and (.capabilities[] | select(.key == "agent.inventory") | .status == "SUPPORTED")'
 
 step "tasks: list services and processes, control a service (agent runs as root via systemd)"
-task() { # task TYPE PARAMS_JSON -> final task JSON
+task() { # task TYPE PARAMS_JSON [WAIT_ROUNDS] -> final task JSON
 	local t id i s
 	t="$(api POST "/servers/$SERVER_ID/tasks" "$(jq -nc --arg t "$1" --argjson p "$2" '{type:$t,params:$p}')")"
 	id="$(jq -r .id <<<"$t")"
-	for i in 1 2 3; do
+	for i in $(seq "${3:-3}"); do
 		t="$(api GET "/servers/$SERVER_ID/tasks/$id?wait=20")"
 		s="$(jq -r .status <<<"$t")"
 		[ "$s" = queued ] || [ "$s" = running ] || break
@@ -156,6 +156,48 @@ OLD_HN="$(hostname)"
 task system.hostname '{"hostname":"osriva-ci-host"}' | jq -e '.status == "succeeded" and .result.hostname == "osriva-ci-host"' >/dev/null
 [ "$(hostname)" = osriva-ci-host ] || fail "hostname not applied"
 task system.hostname "$(jq -nc --arg h "$OLD_HN" '{hostname:$h}')" >/dev/null
+
+
+step "Docker: the control plane itself runs in Docker on this host (agent as root)"
+login # fresh sign-in: run/stop/remove need recent authentication
+task docker.info '{}' | jq -e '.status == "succeeded" and .result.available == true and .result.containers_running >= 4' >/dev/null || fail "docker.info"
+CTS="$(task docker.containers '{}')"
+jq -e '[.result[] | select(.compose_project == "osriva" and .protected == true)] | length >= 4' <<<"$CTS" >/dev/null || fail "control-plane containers not marked protected: $CTS"
+API_CT="$(jq -r '[.result[] | select(.compose_project == "osriva" and (.name | test("api")))][0].name' <<<"$CTS")"
+for a in stop restart remove; do
+	task docker.container.action "$(jq -nc --arg id "$API_CT" --arg a "$a" '{id:$id,action:$a}')" | jq -e '.status == "failed" and (.error | contains("control plane"))' >/dev/null || fail "$a on $API_CT was not refused"
+done
+[ "$(sudo docker inspect -f '{{.State.Running}}' "$API_CT")" = true ] || fail "$API_CT is not running any more"
+task docker.container.run '{"image":"alpine:3.20","volumes":[{"volume":"osriva_postgres-data","target":"/steal"}]}' | jq -e '.status == "failed" and (.error | contains("control plane"))' >/dev/null || fail "control-plane volume was mountable"
+for bad in '{"image":"alpine:3.20","privileged":true}' '{"image":"alpine:3.20","network_mode":"host"}' '{"image":"alpine:3.20","volumes":[{"volume":"/","target":"/host"}]}'; do
+	api POST "/servers/$SERVER_ID/tasks" "$(jq -nc --argjson p "$bad" '{type:"docker.container.run",params:$p}')" >/dev/null 2>&1 && fail "unsafe run accepted: $bad"
+done
+
+step "Docker: run, inspect, log, stop and remove a container"
+RUN="$(task docker.container.run '{"image":"nginx:1.27-alpine","name":"osriva-ci-web","env":{"CI_SECRET":"hunter3"},"ports":[{"host_port":18080,"container_port":80}],"volumes":[{"volume":"osriva-ci-data","target":"/usr/share/nginx/html"}],"restart":"unless-stopped"}' 9)"
+jq -e '.status == "succeeded" and .result.state == "running" and .result.name == "osriva-ci-web"' <<<"$RUN" >/dev/null || fail "docker run: $RUN"
+[ "$(sudo docker inspect -f '{{(index (index .HostConfig.PortBindings "80/tcp") 0).HostIp}}' osriva-ci-web)" = 127.0.0.1 ] || fail "port not bound to loopback"
+[ "$(sudo docker inspect -f '{{.HostConfig.Privileged}} {{.HostConfig.NetworkMode}}' osriva-ci-web)" = "false bridge" ] || fail "unsafe host config"
+sudo docker inspect -f '{{.HostConfig.SecurityOpt}}' osriva-ci-web | grep -q no-new-privileges || fail "no-new-privileges missing"
+wait_for 30 "nginx answers on 127.0.0.1:18080" curl -fsS -o /dev/null http://127.0.0.1:18080/ || fail "nginx not reachable on loopback"
+task docker.container.logs '{"id":"osriva-ci-web","lines":50}' | jq -e '.status == "succeeded" and (.result.lines | length > 0)' >/dev/null || fail "container logs"
+api GET "/servers/$SERVER_ID/tasks?limit=50" | grep -q hunter3 && fail "container env value leaked into the task list"
+task docker.container.action '{"id":"osriva-ci-web","action":"stop"}' | jq -e '.status == "succeeded" and .result.state == "exited"' >/dev/null || fail "docker stop"
+task docker.container.action '{"id":"osriva-ci-web","action":"start"}' | jq -e '.status == "succeeded" and .result.state == "running"' >/dev/null || fail "docker start"
+task docker.container.action '{"id":"osriva-ci-web","action":"remove"}' | jq -e '.status == "failed"' >/dev/null || fail "a running container was removed without stopping"
+task docker.container.action '{"id":"osriva-ci-web","action":"stop"}' >/dev/null
+task docker.container.action '{"id":"osriva-ci-web","action":"remove"}' | jq -e '.status == "succeeded"' >/dev/null || fail "docker remove"
+sudo docker inspect osriva-ci-web >/dev/null 2>&1 && fail "container still exists"
+task docker.volumes '{}' | jq -e '[.result[] | select(.name == "osriva-ci-data")] | length == 1' >/dev/null || fail "named volume missing after remove"
+task docker.networks '{}' | jq -e '[.result[] | select(.name == "bridge")] | length == 1' >/dev/null || fail "networks"
+
+step "Docker: images"
+task docker.image.pull '{"image":"alpine:3.20"}' 9 | jq -e '.status == "succeeded"' >/dev/null || fail "pull"
+task docker.images '{}' | jq -e '[.result[] | select(.tags | index("alpine:3.20"))] | length == 1' >/dev/null || fail "pulled image not listed"
+task docker.image.remove '{"image":"alpine:3.20"}' | jq -e '.status == "succeeded"' >/dev/null || fail "image remove"
+task docker.image.remove '{"image":"postgres:17-alpine"}' | jq -e '.status == "failed"' >/dev/null || fail "an image in use was removed"
+task docker.images.prune '{}' | jq -e '.status == "succeeded"' >/dev/null || fail "prune"
+sudo docker volume rm osriva-ci-data >/dev/null
 
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }

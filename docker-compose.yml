@@ -11,6 +11,7 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    labels: { dev.osriva.control-plane: "true" } # the panel refuses to stop or remove these
     environment:
       POSTGRES_DB: osriva
       POSTGRES_USER: osriva
@@ -43,11 +44,13 @@ services:
       postgres: { condition: service_healthy }
     networks: [internal]
     restart: "no"
+    labels: { dev.osriva.control-plane: "true" } # the panel refuses to stop or remove these
 
   api:
     image: osriva/api:local
     pull_policy: never # built by the migrate service from the same Dockerfile
     restart: unless-stopped
+    labels: { dev.osriva.control-plane: "true" } # the panel refuses to stop or remove these
     command: ["serve"]
     environment: *api-env
     depends_on:
@@ -63,6 +66,7 @@ services:
     build: { context: ., dockerfile: infrastructure/docker/dashboard.Dockerfile }
     image: osriva/dashboard:local
     restart: unless-stopped
+    labels: { dev.osriva.control-plane: "true" } # the panel refuses to stop or remove these
     networks: [internal]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null || exit 1"]
@@ -73,6 +77,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    labels: { dev.osriva.control-plane: "true" } # the panel refuses to stop or remove these
     environment:
       OSRIVA_DOMAIN: ${OSRIVA_DOMAIN:-localhost}
     ports:
