@@ -12,10 +12,12 @@ Last updated: 2026-11-02 (Phase 1).
 | Platform | Status | Evidence / notes |
 |----------|--------|------------------|
 | Windows 11 x86_64, Go 1.27.3, Node 24, in-memory store | PARTIALLY_SUPPORTED | Development only: unit + HTTP tests pass, dashboard built and exercised in a browser (2026-11-02). Not a production target. |
-| Linux x86_64 (Ubuntu runner), Go 1.26, PostgreSQL 17 | NOT_TESTED | CI workflow defined (`.github/workflows/ci.yml`) but not yet run. |
-| Docker Compose stack | NOT_TESTED | Dockerfiles and compose written. No Docker available during Phase 1. |
+| Linux x86_64 (Ubuntu runner), Go 1.26, PostgreSQL 17 | PARTIALLY_SUPPORTED | GitHub Actions CI passed on 2026-11-02 (commit 3b7d96e): gofmt, vet, `go test -race` including the PostgreSQL contract and migration tests. Not yet run as a long-lived deployment. |
+| Docker images (API, dashboard) | PARTIALLY_SUPPORTED | Both images built in CI on 2026-11-02. Containers not yet started. |
+| Docker Compose stack | NOT_TESTED | `docker compose up` has never been run. |
 | Linux ARM64 | NOT_TESTED | Static Go binary should cross-compile. Unverified. |
-| PostgreSQL 16 / 17 | NOT_TESTED | Schema uses only PG ≥ 13 features. Contract tests run in CI on 17. |
+| PostgreSQL 17 | SUPPORTED | Store contract suite and migration idempotency test passed in CI on 2026-11-02. |
+| PostgreSQL 16 | NOT_TESTED | Schema uses only PG ≥ 13 features. Not run in CI. |
 
 ## Managed servers (OSRIVA Agent)
 

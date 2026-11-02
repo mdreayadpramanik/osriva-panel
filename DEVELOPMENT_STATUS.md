@@ -29,13 +29,13 @@ Last updated: **2026-11-02** · Current phase: **1 (Foundation): complete with c
 | CLI: `serve`, `migrate`, `admin create`, `gen-secret`, `version` | `serve` + `version` run manually |
 | Dashboard: login (incl. TOTP step), overview, users & roles, audit log, account (password, 2FA, sessions, security activity), settings, roadmap; light/dark/system theme; responsive shell | `tsc` + `next build`. In a browser against the real API: login, redirect when signed out, user creation and disable, CSRF rejection, HttpOnly cookie, rendering of every page. |
 
-Totals: 45 Go test cases pass. The 2 PostgreSQL integration tests skip locally because there is no database here.
+Totals: 45 Go test cases pass locally; the 2 PostgreSQL integration tests skip locally (no database here) and pass in CI.
 
 ### Partially implemented / untested
 
-* **PostgreSQL store and migrator:** fully written and compiled, but **never run against a real
-  database**. They will run in CI (`OSRIVA_TEST_DATABASE_URL`), which has not run yet because the repo has no remote.
-* **Docker Compose stack, Dockerfiles, Caddyfile:** written but **not built or run** (no Docker here).
+* **PostgreSQL store and migrator:** the store contract suite and migration tests passed against
+  PostgreSQL 17 in GitHub Actions CI (2026-11-02, commit 3b7d96e). Not yet exercised by a running deployment.
+* **Docker:** both images built in CI. The Compose stack and Caddyfile have **never been started**.
 * **Dashboard UI clicks:** the browser checks used in-page API calls and page rendering.
   Modal dialogs and buttons were not clicked through, because the app window was hidden during verification.
 * **Mobile/tablet layout:** responsive classes exist but were not visually checked.

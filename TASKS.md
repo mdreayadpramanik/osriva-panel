@@ -10,8 +10,8 @@
 - [x] RBAC catalog, built-in roles, anti-escalation, audit log
 - [x] User management, sessions, MFA, settings API + OpenAPI spec
 - [x] Dashboard core (login, overview, users, audit, account, settings, roadmap, theming)
-- [~] PostgreSQL store + migrator (written, needs a real-DB run: push the repo so CI runs)
-- [~] Docker Compose stack (written, needs `docker compose up` verification)
+- [x] PostgreSQL store + migrator (contract suite passed in CI on PostgreSQL 17)
+- [~] Docker Compose stack (images build in CI; `docker compose up` not yet verified)
 - [ ] Add verbatim AGPL-3.0 / Apache-2.0 license texts
 - [ ] OpenAPI ↔ handler contract test; generate `packages/api-client` from the spec
 - [ ] Playwright e2e: login, MFA, user CRUD, audit
