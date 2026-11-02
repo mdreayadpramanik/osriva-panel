@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"testing"
 )
@@ -22,7 +23,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		t.Fatal("Exists = false after Save")
 	}
 	got, err := Load(dir)
-	if err != nil || got.Config != s.Config || string(got.KeyPEM) != "key" || string(got.CAPEM) != "ca" {
+	if err != nil || !reflect.DeepEqual(got.Config, s.Config) || string(got.KeyPEM) != "key" || string(got.CAPEM) != "ca" {
 		t.Fatalf("load: %+v %v", got, err)
 	}
 	if err := got.SaveCredentials([]byte("cert2"), []byte("key2")); err != nil {

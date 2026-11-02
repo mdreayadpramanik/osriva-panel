@@ -29,7 +29,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
-var version = "0.3.0-dev"
+var version = "0.4.0-dev"
 
 const usage = `OSRIVA Agent
 
@@ -233,6 +233,8 @@ func runLoop(ctx context.Context, log *slog.Logger, dir string, once bool) error
 		log.Error("cannot start", "err", err)
 		return err
 	}
+	absDir, _ := filepath.Abs(dir)
+	tasks.ConfigureFiles(st.Config.FileRoots, absDir)
 	log.Info("agent starting", "version", version, "server_id", st.Config.ServerID, "endpoint", st.Config.AgentEndpoint)
 
 	h := &clientHolder{c: client}

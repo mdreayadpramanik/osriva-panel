@@ -10,6 +10,7 @@ import (
 
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentproto"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
@@ -31,7 +32,7 @@ func toTaskDTO(t *store.Task) taskDTO {
 	if len(res) == 0 {
 		res = json.RawMessage("null")
 	}
-	return taskDTO{ID: t.ID, Type: t.Type, Params: t.Params, Status: string(t.Status), RequestedBy: t.RequestedBy,
+	return taskDTO{ID: t.ID, Type: t.Type, Params: redacted(t.Params), Status: string(t.Status), RequestedBy: t.RequestedBy,
 		CreatedAt: ts(t.CreatedAt), StartedAt: tsPtr(t.StartedAt), FinishedAt: tsPtr(t.FinishedAt), Result: res, Error: t.Error}
 }
 
@@ -127,4 +128,12 @@ func (s *Server) handleAgentMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func redacted(params json.RawMessage) json.RawMessage {
+	raw, err := json.Marshal(fleet.RedactedParams(params))
+	if err != nil {
+		return json.RawMessage("{}")
+	}
+	return raw
 }

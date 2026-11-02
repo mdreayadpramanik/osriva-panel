@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"os/user"
 	"path/filepath"
 	"sort"
@@ -103,4 +104,22 @@ func listProcesses(ctx context.Context) (any, error) {
 		res.Processes, res.Truncated = res.Processes[:agenttask.MaxProcesses], true
 	}
 	return res, nil
+}
+
+func readLogs(ctx context.Context, p agenttask.LogsParams) (any, error) {
+	if _, err := exec.LookPath("journalctl"); err != nil {
+		return nil, fmt.Errorf("%w: journalctl not found (only journald logs are supported on Linux)", ErrUnsupported)
+	}
+	if p.Source == agenttask.LogSourceApplication {
+		return nil, fmt.Errorf("%w: the application log exists on Windows only; use source=system or service", ErrUnsupported)
+	}
+	args := []string{"--no-pager", "--output=json", "--lines=" + strconv.Itoa(p.Lines), "--priority=" + journalPriority(p.MinLevel)}
+	if p.Source == agenttask.LogSourceService {
+		args = append(args, "--unit="+p.Service)
+	}
+	out, err := run(ctx, "journalctl", args...)
+	if err != nil {
+		return nil, err
+	}
+	return agenttask.LogsResult{Backend: "journald", Entries: ParseJournal(out)}, nil
 }

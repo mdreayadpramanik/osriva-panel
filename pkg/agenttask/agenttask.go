@@ -19,10 +19,28 @@ const (
 )
 
 // Types is the complete allowlist.
-var Types = map[string]bool{ServicesList: true, ServiceAction: true, ProcessesList: true}
+var Types = map[string]bool{
+	ServicesList: true, ServiceAction: true, ProcessesList: true,
+	LogsRead: true, FilesList: true, FilesRead: true, FilesWrite: true, FilesMkdir: true, FilesDelete: true,
+}
 
 // ReadOnly reports whether a task type only reads state.
-func ReadOnly(typ string) bool { return typ == ServicesList || typ == ProcessesList }
+func ReadOnly(typ string) bool {
+	switch typ {
+	case ServicesList, ProcessesList, LogsRead, FilesList, FilesRead:
+		return true
+	}
+	return false
+}
+
+// FileTask reports whether a task touches the file system (needs servers.files).
+func FileTask(typ string) bool {
+	switch typ {
+	case FilesList, FilesRead, FilesWrite, FilesMkdir, FilesDelete:
+		return true
+	}
+	return false
+}
 
 const (
 	ActionStart   = "start"
@@ -80,6 +98,10 @@ func Validate(typ string, params json.RawMessage) error {
 		if !actions[p.Action] {
 			return fmt.Errorf("%w: action must be start, stop, restart, enable or disable", ErrInvalid)
 		}
+	case LogsRead:
+		return validateLogs(params)
+	default:
+		return validateFiles(typ, params)
 	}
 	return nil
 }

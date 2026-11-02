@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 	"unsafe"
 
@@ -241,4 +242,23 @@ func connectSCM(access uint32) (*mgr.Mgr, error) {
 		return nil, fmt.Errorf("connect to the Service Control Manager: %w", err)
 	}
 	return &mgr.Mgr{Handle: h}, nil
+}
+
+func readLogs(ctx context.Context, p agenttask.LogsParams) (any, error) {
+	logName := "System"
+	switch p.Source {
+	case agenttask.LogSourceApplication:
+		logName = "Application"
+	case agenttask.LogSourceService:
+		return nil, fmt.Errorf("%w: per-service logs are not separated on Windows; use source=system or application", ErrUnsupported)
+	}
+	args := []string{"qe", logName, "/c:" + strconv.Itoa(p.Lines), "/rd:true", "/f:RenderedXml"}
+	if q := winLevelQuery(p.MinLevel); q != "" {
+		args = append(args, "/q:"+q)
+	}
+	out, err := run(ctx, "wevtutil", args...)
+	if err != nil {
+		return nil, err
+	}
+	return agenttask.LogsResult{Backend: "windows-eventlog", Entries: ParseWinEvents(out)}, nil
 }

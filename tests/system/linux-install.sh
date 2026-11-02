@@ -100,6 +100,28 @@ task service.action "{\"name\":\"$SVC\",\"action\":\"restart\"}" | jq -e '.statu
 ! api POST "/servers/$SERVER_ID/tasks" '{"type":"service.action","params":{"name":"x;reboot","action":"stop"}}' >/dev/null 2>&1 || fail 'negated check failed (see line above)'
 api GET "/servers/$SERVER_ID/tasks" | jq -e '[.tasks[] | select(.type == "service.action")] | length == 3' >/dev/null
 
+step "logs: journald (whole journal and one unit)"
+task logs.read '{"source":"system","lines":50}' | jq -e '.status == "succeeded" and .result.backend == "journald" and (.result.entries | length > 0)' >/dev/null
+task logs.read "{\"source\":\"service\",\"service\":\"osriva-agent.service\",\"lines\":20}" | jq -e '.status == "succeeded" and ([.result.entries[] | select(.source == "osriva-agent.service")] | length > 0)' >/dev/null
+
+step "files: browse, write, read back, delete; secrets stay out of reach (agent runs as root)"
+sudo mkdir -p /srv/osriva-system-test
+task files.list '{"path":"/etc"}' | jq -e '.status == "succeeded" and ([.result.entries[] | select(.name == "shadow" and .denied == true)] | length == 1) and (.result.roots | index("/etc") != null)' >/dev/null
+task files.read '{"path":"/etc/hostname"}' | jq -e --arg h "$(cat /etc/hostname)" '.status == "succeeded" and (.result.content | rtrimstr("\n")) == $h' >/dev/null
+task files.write '{"path":"/srv/osriva-system-test/app.conf","content":"password=hunter2\n","create":true}' | jq -e '.status == "succeeded" and .result.created == true' >/dev/null
+[ "$(sudo cat /srv/osriva-system-test/app.conf)" = "password=hunter2" ] || fail "written file content differs"
+task files.read '{"path":"/srv/osriva-system-test/app.conf"}' | jq -e '.result.content == "password=hunter2\n"' >/dev/null
+for denied in /etc/shadow /etc/sudoers /etc/osriva-agent/agent.key /etc/osriva/osriva.env /root/.bashrc /proc/1/environ /etc/../root/.profile; do
+	task files.read "{\"path\":\"$denied\"}" | jq -e '.status == "failed" and (.error | contains("not allowed by this agent"))' >/dev/null || fail "$denied was readable"
+done
+sudo ln -sfn /root /srv/osriva-system-test/escape
+task files.list '{"path":"/srv/osriva-system-test/escape"}' | jq -e '.status == "failed" and (.error | contains("not allowed"))' >/dev/null || fail "symlink escape to /root"
+task files.delete '{"path":"/srv/osriva-system-test/app.conf"}' | jq -e '.status == "succeeded"' >/dev/null
+[ ! -e /srv/osriva-system-test/app.conf ] || fail "file not deleted"
+task files.delete '{"path":"/srv"}' | jq -e '.status == "failed"' >/dev/null || fail "a root was deleted"
+api GET "/servers/$SERVER_ID/tasks?limit=50" | grep -q hunter2 && fail "file content leaked into the task list"
+sudo rm -rf /srv/osriva-system-test
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

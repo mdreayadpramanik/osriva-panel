@@ -17,6 +17,7 @@ const (
 	ServersRead       = "servers.read"
 	ServersWrite      = "servers.write"
 	ServersOperate    = "servers.operate"
+	ServersFiles      = "servers.files"
 )
 
 // Catalog maps every permission to its description.
@@ -31,6 +32,7 @@ var Catalog = map[string]string{
 	ServersRead:       "View managed servers and their inventory",
 	ServersWrite:      "Add servers, issue enrolment tokens and revoke agents",
 	ServersOperate:    "Control services on managed servers (start, stop, restart, enable, disable)",
+	ServersFiles:      "Browse, read and edit files on managed servers (within each agent's allowed directories)",
 }
 
 // BuiltinRole is a role shipped with OSRIVA and recreated at every startup.
@@ -55,7 +57,7 @@ func BuiltinRoles() []BuiltinRole {
 	return []BuiltinRole{
 		{RoleOwner, "Owner", "Full control of the panel, including settings", all},
 		{RoleAdmin, "Administrator", "Manage users and sessions; read settings and audit log",
-			[]string{UsersRead, UsersWrite, RolesRead, AuditRead, SettingsRead, SessionsManageAll, ServersRead, ServersWrite, ServersOperate}},
+			[]string{UsersRead, UsersWrite, RolesRead, AuditRead, SettingsRead, SessionsManageAll, ServersRead, ServersWrite, ServersOperate, ServersFiles}},
 		{RoleAuditor, "Auditor", "Read-only access to users, roles, settings and the audit log",
 			[]string{UsersRead, RolesRead, AuditRead, SettingsRead, ServersRead}},
 		{RoleMember, "Member", "Can sign in and manage their own account only", nil},

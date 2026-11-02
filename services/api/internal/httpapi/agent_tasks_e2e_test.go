@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -174,5 +175,60 @@ func TestMetricsIngestAndRead(t *testing.T) {
 	big := make([]metrics.Sample, agentproto.MaxMetricsBatch+1)
 	if err := client.SendMetrics(ctx, big); apiCode(err) != "validation_failed" {
 		t.Fatalf("oversized batch: %v", err)
+	}
+}
+
+func TestFileTaskPermissionsAndRedaction(t *testing.T) {
+	e := newAgentEnv(t)
+	res, client := e.enroll(e.addServer("files-1"))
+	id := res.Response.ServerID
+	ctx := context.Background()
+	auditor := e.principal("auditor2@example.com", rbac.RoleAuditor)
+	list := json.RawMessage(`{"path":"/etc"}`)
+	write := json.RawMessage(`{"path":"/etc/app.conf","content":"password=hunter2","create":true}`)
+
+	// Auditors can read logs but not files.
+	if _, err := e.fleet.QueueTask(ctx, auditor, id, agenttask.LogsRead, json.RawMessage(`{"source":"system"}`)); err != nil {
+		t.Fatalf("auditor logs: %v", err)
+	}
+	if _, err := e.fleet.QueueTask(ctx, auditor, id, agenttask.FilesList, list); !errors.Is(err, identity.ErrForbidden) {
+		t.Fatalf("auditor files.list: %v", err)
+	}
+	// Writes need a fresh password confirmation.
+	stale := *e.owner
+	sess := *e.owner.Session
+	old := time.Now().Add(-time.Hour)
+	sess.ReauthenticatedAt = &old
+	stale.Session = &sess
+	if _, err := e.fleet.QueueTask(ctx, &stale, id, agenttask.FilesWrite, write); !errors.Is(err, identity.ErrReauthRequired) {
+		t.Fatalf("write without reauth: %v", err)
+	}
+	wt, err := e.fleet.QueueTask(ctx, e.owner, id, agenttask.FilesWrite, write)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// File contents never appear in the task list or the audit log.
+	tasks, _ := e.fleet.ListTasks(ctx, e.owner, id, 10)
+	for _, x := range tasks {
+		if x.ID == wt.ID {
+			if p := redacted(x.Params); string(p) == "" || strings.Contains(string(p), "hunter2") || !strings.Contains(string(p), "content_bytes") {
+				t.Fatalf("redaction: %s", p)
+			}
+		}
+	}
+	audit, _ := e.svc.ListAudit(ctx, e.owner, store.AuditFilter{ActionPrefix: "servers.task"})
+	for _, a := range audit {
+		if b, _ := json.Marshal(a.Metadata); strings.Contains(string(b), "hunter2") {
+			t.Fatalf("file content leaked into the audit log: %s", b)
+		}
+	}
+	// A file task's result (file contents) is hidden from readers without servers.files.
+	rt, _ := e.fleet.QueueTask(ctx, e.owner, id, agenttask.FilesRead, json.RawMessage(`{"path":"/etc/hostname"}`))
+	polled, _ := client.PollTasks(ctx)
+	if len(polled) == 0 {
+		t.Fatal("agent got no tasks")
+	}
+	if _, err := e.fleet.GetTask(ctx, auditor, id, rt.ID, 0); !errors.Is(err, identity.ErrForbidden) {
+		t.Fatalf("auditor read a file task result: %v", err)
 	}
 }

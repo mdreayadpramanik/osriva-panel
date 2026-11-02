@@ -24,6 +24,8 @@ type Config struct {
 	PanelURL      string `json:"panel_url"`
 	AgentEndpoint string `json:"agent_endpoint"`
 	CAFingerprint string `json:"ca_fingerprint"`
+	// FileRoots limits the file manager (empty = tasks.DefaultRoots()). Only editable on the server itself.
+	FileRoots []string `json:"file_roots,omitempty"`
 }
 
 type State struct {

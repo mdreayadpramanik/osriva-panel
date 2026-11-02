@@ -38,6 +38,38 @@ func Execute(ctx context.Context, typ string, params json.RawMessage) (any, erro
 		return serviceAction(ctx, p.Name, p.Action)
 	case agenttask.ProcessesList:
 		return listProcesses(ctx)
+	case agenttask.LogsRead:
+		var p agenttask.LogsParams
+		_ = json.Unmarshal(params, &p)
+		if p.Lines == 0 {
+			p.Lines = 200
+		}
+		return readLogs(ctx, p)
+	}
+	if agenttask.FileTask(typ) {
+		return fileTask(ctx, currentGuard(), typ, params)
+	}
+	return nil, fmt.Errorf("%w: %s", agenttask.ErrInvalid, typ)
+}
+
+func fileTask(ctx context.Context, g *FSGuard, typ string, params json.RawMessage) (any, error) {
+	switch typ {
+	case agenttask.FilesWrite:
+		var p agenttask.FilesWriteParams
+		_ = json.Unmarshal(params, &p)
+		return filesWrite(ctx, g, p)
+	}
+	var p agenttask.PathParams
+	_ = json.Unmarshal(params, &p)
+	switch typ {
+	case agenttask.FilesList:
+		return filesList(ctx, g, p.Path)
+	case agenttask.FilesRead:
+		return filesRead(ctx, g, p.Path)
+	case agenttask.FilesMkdir:
+		return filesMkdir(ctx, g, p.Path)
+	case agenttask.FilesDelete:
+		return filesDelete(ctx, g, p.Path)
 	}
 	return nil, fmt.Errorf("%w: %s", agenttask.ErrInvalid, typ)
 }

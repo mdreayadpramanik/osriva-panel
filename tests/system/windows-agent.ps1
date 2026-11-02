@@ -102,6 +102,23 @@ try {
     try { Api Post "/servers/$id/tasks" @{ type = 'shell.exec'; params = @{ cmd = 'whoami' } } | Out-Null } catch { $rejected = $true }
     if (-not $rejected) { throw 'shell.exec was accepted' }
 
+    Step 'logs and files (agent runs as LocalSystem)'
+    $logs = Run-Task 'logs.read' @{ source = 'system'; lines = 20 }
+    if ($logs.status -ne 'succeeded' -or $logs.result.backend -ne 'windows-eventlog' -or @($logs.result.entries).Count -eq 0) { throw "logs.read: $($logs.error)" }
+    $dir = 'C:\ProgramData\osriva-system-test'
+    if ((Run-Task 'files.mkdir' @{ path = $dir }).status -ne 'succeeded') { throw 'mkdir failed' }
+    $w = Run-Task 'files.write' @{ path = "$dir\app.conf"; content = "password=hunter2`n"; create = $true }
+    if ($w.status -ne 'succeeded' -or (Get-Content -Raw "$dir\app.conf") -ne "password=hunter2`n") { throw "write: $($w.error)" }
+    $l = Run-Task 'files.list' @{ path = 'C:\ProgramData\OSRIVA' }
+    if (-not ($l.result.entries | Where-Object { $_.name -eq 'agent' -and $_.denied })) { throw "agent credential directory not marked protected: $($l.status) $($l.error)" }
+    foreach ($p in @('C:\ProgramData\OSRIVA\agent\agent.key', 'C:\Windows\System32\config\SAM', 'C:\ProgramData\..\Windows\win.ini')) {
+        $r = Run-Task 'files.read' @{ path = $p }
+        if ($r.status -ne 'failed' -or $r.error -notlike '*not allowed by this agent*') { throw "$p was readable: $($r.status) $($r.error)" }
+    }
+    if ((Run-Task 'files.delete' @{ path = "$dir\app.conf" }).status -ne 'succeeded' -or (Test-Path "$dir\app.conf")) { throw 'delete file failed' }
+    if ((Run-Task 'files.delete' @{ path = $dir }).status -ne 'succeeded') { throw 'delete dir failed' }
+    if ((Invoke-WebRequest -UseBasicParsing -WebSession $script:session "$panel/servers/$id/tasks?limit=50").Content -like '*hunter2*') { throw 'file content leaked into the task list' }
+
     Step 'live metrics arrive'
     Wait-Until 90 'metrics with CPU and memory' {
         $m = Api Get "/servers/$id/metrics?minutes=10"

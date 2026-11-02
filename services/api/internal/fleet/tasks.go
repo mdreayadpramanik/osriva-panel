@@ -60,11 +60,20 @@ func (s *Service) QueueTask(ctx context.Context, actor *identity.Principal, serv
 		return nil, &identity.ValidationError{Field: "task", Message: strings.TrimPrefix(err.Error(), agenttask.ErrInvalid.Error()+": ")}
 	}
 	perm := rbac.ServersOperate
-	if agenttask.ReadOnly(typ) {
+	switch {
+	case agenttask.FileTask(typ):
+		// File contents can hold secrets, so even reading needs its own permission.
+		perm = rbac.ServersFiles
+	case agenttask.ReadOnly(typ):
 		perm = rbac.ServersRead
 	}
 	if err := s.id.Require(ctx, actor, perm); err != nil {
 		return nil, err
+	}
+	if agenttask.FileTask(typ) && !agenttask.ReadOnly(typ) {
+		if err := s.id.RequireRecentReauth(actor); err != nil {
+			return nil, err
+		}
 	}
 	if typ == agenttask.ServiceAction {
 		var p agenttask.ServiceActionParams
@@ -91,12 +100,22 @@ func (s *Service) QueueTask(ctx context.Context, actor *identity.Principal, serv
 	if err := s.store.CreateTask(ctx, t); err != nil {
 		return nil, err
 	}
-	var md map[string]any
-	_ = json.Unmarshal(params, &md)
 	s.id.Audit(ctx, actor.User, "servers.task", "server", x.ID, store.OutcomeSuccess,
-		map[string]any{"task_id": t.ID, "type": typ, "params": md, "server": x.Name})
+		map[string]any{"task_id": t.ID, "type": typ, "params": RedactedParams(params), "server": x.Name})
 	s.notify.wake(x.ID)
 	return t, nil
+}
+
+// RedactedParams returns task parameters safe to log or display: file contents
+// are replaced by their size, because configuration files often hold secrets.
+func RedactedParams(params json.RawMessage) map[string]any {
+	md := map[string]any{}
+	_ = json.Unmarshal(params, &md)
+	if c, ok := md["content"].(string); ok {
+		delete(md, "content")
+		md["content_bytes"] = len(c)
+	}
+	return md
 }
 
 func (s *Service) taskInOrg(ctx context.Context, actor *identity.Principal, serverID, taskID string) (*store.Task, error) {
@@ -112,6 +131,12 @@ func (s *Service) taskInOrg(ctx context.Context, actor *identity.Principal, serv
 	}
 	if t.ServerID != serverID {
 		return nil, store.ErrNotFound
+	}
+	// File task results can contain file contents.
+	if agenttask.FileTask(t.Type) {
+		if err := s.id.Require(ctx, actor, rbac.ServersFiles); err != nil {
+			return nil, err
+		}
 	}
 	return t, nil
 }
