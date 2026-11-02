@@ -1,0 +1,24 @@
+# OSRIVA Panel reverse proxy. The only service exposed publicly.
+# For a real domain, set OSRIVA_DOMAIN and Caddy obtains a certificate via ACME automatically.
+{$OSRIVA_DOMAIN:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# Internal probes are not exposed publicly.
+	@internal path /healthz /readyz
+	respond @internal 404
+
+	handle /api/* {
+		reverse_proxy api:8080
+	}
+
+	handle {
+		reverse_proxy dashboard:3000
+	}
+}

@@ -1,0 +1,87 @@
+# OSRIVA Panel control plane: single-server, production-oriented.
+#
+#   cp .env.example .env    # set OSRIVA_SECRET_KEY, POSTGRES_PASSWORD, OSRIVA_DOMAIN
+#   docker compose up -d --build
+#   docker compose run --rm api admin create --email you@example.com
+#
+# Only Caddy publishes ports. PostgreSQL and the API live on an internal network.
+name: osriva
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: osriva
+      POSTGRES_USER: osriva
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U osriva -d osriva"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build: { context: ., dockerfile: infrastructure/docker/api.Dockerfile }
+    image: osriva/api:local
+    command: ["migrate"]
+    environment: &api-env
+      OSRIVA_ENV: production
+      OSRIVA_HTTP_ADDR: 0.0.0.0:8080
+      OSRIVA_DATABASE_URL: postgres://osriva:${POSTGRES_PASSWORD}@postgres:5432/osriva?sslmode=disable
+      OSRIVA_SECRET_KEY: ${OSRIVA_SECRET_KEY:?set OSRIVA_SECRET_KEY in .env}
+      # Caddy is the only peer allowed to set X-Forwarded-For (compose internal network).
+      OSRIVA_TRUSTED_PROXIES: 172.16.0.0/12,10.0.0.0/8,192.168.0.0/16
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [internal]
+    restart: "no"
+
+  api:
+    image: osriva/api:local
+    restart: unless-stopped
+    command: ["serve"]
+    environment: *api-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [internal]
+    # distroless has no shell/curl; readiness is checked by Caddy upstream + `docker compose logs`.
+
+  dashboard:
+    build: { context: ., dockerfile: infrastructure/docker/dashboard.Dockerfile }
+    image: osriva/dashboard:local
+    restart: unless-stopped
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      OSRIVA_DOMAIN: ${OSRIVA_DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/reverse-proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api, dashboard]
+    networks: [internal, public]
+
+networks:
+  internal:
+    internal: true
+  public: {}
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

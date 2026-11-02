@@ -1,0 +1,480 @@
+openapi: 3.1.0
+info:
+  title: OSRIVA Panel Core API
+  version: "1.0.0-phase1"
+  summary: One Platform. Every Server. Total Control.
+  description: |
+    Versioned REST API of OSRIVA Panel. Phase 1 covers identity, sessions, MFA,
+    RBAC, audit logging and panel settings.
+
+    **Authentication.** `POST /auth/login` sets an `HttpOnly` session cookie
+    (`osriva_session`). Every unsafe request (POST/PUT/PATCH/DELETE) made with
+    the cookie must send the `X-CSRF-Token` header returned by `/auth/me` or
+    `/auth/login`. Request bodies must be `application/json`.
+
+    **Re-authentication.** Dangerous operations return `403 reauth_required`
+    unless the session confirmed the password within the re-auth window
+    (default 10 minutes) via `POST /auth/reauth`.
+
+    **Errors.** Every error has the shape `{"error":{"code","message","field?"},"request_id"}`.
+    Stable codes: `validation_failed`, `policy_violation`, `invalid_credentials`,
+    `mfa_required`, `invalid_mfa_code`, `rate_limited`, `unauthenticated`,
+    `forbidden`, `reauth_required`, `csrf_failed`, `not_found`, `conflict`,
+    `invalid_json`, `unsupported_media_type`, `body_too_large`, `internal_error`.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+servers:
+  - url: /api/v1
+tags:
+  - name: system
+  - name: auth
+  - name: users
+  - name: audit
+  - name: settings
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: osriva_session
+    csrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            field: { type: string }
+        request_id: { type: string }
+    RoleRef:
+      type: object
+      properties:
+        key: { type: string, examples: [owner] }
+        name: { type: string }
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        status: { type: string, enum: [active, disabled] }
+        mfa_enabled: { type: boolean }
+        roles: { type: array, items: { $ref: "#/components/schemas/RoleRef" } }
+        last_login_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    Me:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+        permissions: { type: array, items: { type: string } }
+        csrf_token: { type: string }
+        panel_mode: { type: string, enum: [personal, provider] }
+        session:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            expires_at: { type: string, format: date-time }
+            reauthenticated_at: { type: [string, "null"], format: date-time }
+    Session:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        current: { type: boolean }
+        ip: { type: string }
+        user_agent: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+    AuditEntry:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        actor_user_id: { type: [string, "null"], format: uuid }
+        actor_label: { type: string }
+        action: { type: string, examples: [auth.login] }
+        target_type: { type: string }
+        target_id: { type: string }
+        outcome: { type: string, enum: [success, failure, denied] }
+        ip: { type: string }
+        user_agent: { type: string }
+        request_id: { type: string }
+        metadata: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+    Role:
+      type: object
+      properties:
+        key: { type: string }
+        name: { type: string }
+        description: { type: string }
+        built_in: { type: boolean }
+        permissions: { type: array, items: { type: string } }
+    Settings:
+      type: object
+      properties:
+        panel_mode: { type: string, enum: [personal, provider] }
+
+security:
+  - sessionCookie: []
+    csrfHeader: []
+
+paths:
+  /meta:
+    get:
+      tags: [system]
+      summary: Product and API version information
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  version: { type: string }
+                  api_version: { type: string }
+                  license: { type: string }
+  /openapi.yaml:
+    get:
+      tags: [system]
+      summary: This specification
+      security: []
+      responses:
+        "200": { description: OpenAPI document }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Sign in and receive a session cookie
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                totp_code: { type: string, description: Required when the account has TOTP enabled }
+            example: { email: admin@example.com, password: "correct horse battery staple" }
+      responses:
+        "200":
+          description: Signed in. Sets the `osriva_session` cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Current user, permissions and CSRF token
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current session
+      responses:
+        "204": { description: Signed out }
+  /auth/reauth:
+    post:
+      tags: [auth]
+      summary: Confirm password (and TOTP) to unlock dangerous operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp_code: { type: string }
+      responses:
+        "200": { description: Re-authenticated }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/password:
+    post:
+      tags: [auth]
+      summary: Change own password (revokes all other sessions)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 12 }
+      responses:
+        "204": { description: Changed }
+        "400": { $ref: "#/components/responses/Error" }
+  /auth/sessions:
+    get:
+      tags: [auth]
+      summary: List own active sessions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions: { type: array, items: { $ref: "#/components/schemas/Session" } }
+  /auth/sessions/{id}:
+    delete:
+      tags: [auth]
+      summary: Revoke one of your own sessions
+      parameters: [{ $ref: "#/components/parameters/id" }]
+      responses:
+        "204": { description: Revoked }
+        "404": { $ref: "#/components/responses/Error" }
+  /auth/sessions/revoke-others:
+    post:
+      tags: [auth]
+      summary: Revoke all of your sessions except the current one
+      responses:
+        "200": { description: "`{revoked: n}`" }
+  /auth/login-history:
+    get:
+      tags: [auth]
+      summary: Your own authentication events
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+  /auth/mfa/totp/setup:
+    post:
+      tags: [auth]
+      summary: Start TOTP enrolment (returns the secret once)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  otpauth_uri: { type: string }
+        "409": { $ref: "#/components/responses/Error" }
+  /auth/mfa/totp/enable:
+    post:
+      tags: [auth]
+      summary: Confirm enrolment with a current code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string } } }
+      responses:
+        "204": { description: Enabled }
+        "400": { $ref: "#/components/responses/Error" }
+  /auth/mfa/totp/disable:
+    post:
+      tags: [auth]
+      summary: Disable TOTP (requires password and a current code)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password: { type: string }
+                code: { type: string }
+      responses:
+        "204": { description: Disabled }
+        "401": { $ref: "#/components/responses/Error" }
+  /users:
+    get:
+      tags: [users]
+      summary: List users (users.read)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users: { type: array, items: { $ref: "#/components/schemas/User" } }
+                  total: { type: integer }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [users]
+      summary: Create a user (users.write; can only grant permissions you hold)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, display_name, password]
+              properties:
+                email: { type: string }
+                display_name: { type: string }
+                password: { type: string, minLength: 12 }
+                roles: { type: array, items: { type: string }, default: [member] }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /users/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [users]
+      summary: Get a user (users.read)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [users]
+      summary: Update a user (users.write; status/roles need re-auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                display_name: { type: string }
+                status: { type: string, enum: [active, disabled] }
+                roles: { type: array, items: { type: string }, minItems: 1 }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /users/{id}/sessions:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [users]
+      summary: List a user's active sessions (sessions.manage_all)
+      responses:
+        "200": { description: "`{sessions: Session[]}`" }
+  /users/{id}/sessions/revoke:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [users]
+      summary: Sign a user out everywhere (sessions.manage_all)
+      responses:
+        "200": { description: "`{revoked: n}`" }
+  /roles:
+    get:
+      tags: [users]
+      summary: List roles (roles.read)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles: { type: array, items: { $ref: "#/components/schemas/Role" } }
+  /audit-logs:
+    get:
+      tags: [audit]
+      summary: Audit log, newest first, keyset-paginated (audit.read)
+      parameters:
+        - { name: action, in: query, description: Action prefix, e.g. `auth.`, schema: { type: string } }
+        - { name: outcome, in: query, schema: { type: string, enum: [success, failure, denied] } }
+        - { name: actor, in: query, schema: { type: string, format: uuid } }
+        - { name: before, in: query, description: Return entries with id < before, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }
+                  next_before: { type: [integer, "null"] }
+  /settings:
+    get:
+      tags: [settings]
+      summary: Panel settings (settings.read)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+  /settings/panel-mode:
+    put:
+      tags: [settings]
+      summary: Switch Personal/Provider mode (settings.write + re-auth)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode]
+              properties:
+                mode: { type: string, enum: [personal, provider] }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "403": { $ref: "#/components/responses/Error" }

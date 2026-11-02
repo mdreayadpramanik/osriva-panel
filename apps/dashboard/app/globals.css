@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Design tokens. Components use the semantic colour names below
+   (bg-surface, text-muted, border-line, …) so both themes come for free. */
+:root {
+  color-scheme: light;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f6;
+  --line: #e3e6eb;
+  --fg: #111827;
+  --muted: #5b6474;
+  --accent: #2f5bea;
+  --accent-hover: #2449c4;
+  --accent-fg: #ffffff;
+  --accent-soft: #e8eeff;
+  --success: #15803d;
+  --success-soft: #e7f6ec;
+  --warning: #a15c07;
+  --warning-soft: #fdf3e1;
+  --danger: #c0262d;
+  --danger-soft: #fdeceb;
+  --ring: #2f5bea66;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0c0f14;
+  --surface: #13171e;
+  --surface-2: #1a2029;
+  --line: #262d38;
+  --fg: #e7eaf0;
+  --muted: #9099a8;
+  --accent: #6b8cff;
+  --accent-hover: #8aa4ff;
+  --accent-fg: #0c0f14;
+  --accent-soft: #1c2647;
+  --success: #4ade80;
+  --success-soft: #12291b;
+  --warning: #fbbf24;
+  --warning-soft: #2e2410;
+  --danger: #f87171;
+  --danger-soft: #34171a;
+  --ring: #6b8cff80;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+dialog::backdrop {
+  background: rgb(0 0 0 / 0.45);
+}

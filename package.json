@@ -1,0 +1,17 @@
+{
+  "name": "osriva-panel",
+  "private": true,
+  "description": "OSRIVA Panel — One Platform. Every Server. Total Control.",
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:dashboard": "npm run dev -w @osriva/dashboard",
+    "build:dashboard": "npm run build -w @osriva/dashboard",
+    "typecheck": "npm run typecheck -w @osriva/dashboard"
+  },
+  "engines": {
+    "node": ">=20.9"
+  }
+}
