@@ -22,12 +22,14 @@ const (
 var Types = map[string]bool{
 	ServicesList: true, ServiceAction: true, ProcessesList: true,
 	LogsRead: true, FilesList: true, FilesRead: true, FilesWrite: true, FilesMkdir: true, FilesDelete: true,
+	UsersList: true, SSHKeysList: true, SSHKeysAdd: true, SSHKeysRemove: true, CronList: true, TimeInfo: true,
+	HostnameSet: true, TimezoneSet: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
 func ReadOnly(typ string) bool {
 	switch typ {
-	case ServicesList, ProcessesList, LogsRead, FilesList, FilesRead:
+	case ServicesList, ProcessesList, LogsRead, FilesList, FilesRead, UsersList, SSHKeysList, CronList, TimeInfo:
 		return true
 	}
 	return false
@@ -100,8 +102,10 @@ func Validate(typ string, params json.RawMessage) error {
 		}
 	case LogsRead:
 		return validateLogs(params)
-	default:
+	case FilesList, FilesRead, FilesWrite, FilesMkdir, FilesDelete:
 		return validateFiles(typ, params)
+	default:
+		return validateSystem(typ, params)
 	}
 	return nil
 }

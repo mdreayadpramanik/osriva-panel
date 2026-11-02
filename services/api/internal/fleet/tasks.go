@@ -59,29 +59,12 @@ func (s *Service) QueueTask(ctx context.Context, actor *identity.Principal, serv
 	if err := agenttask.Validate(typ, params); err != nil {
 		return nil, &identity.ValidationError{Field: "task", Message: strings.TrimPrefix(err.Error(), agenttask.ErrInvalid.Error()+": ")}
 	}
-	perm := rbac.ServersOperate
-	switch {
-	case agenttask.FileTask(typ):
-		// File contents can hold secrets, so even reading needs its own permission.
-		perm = rbac.ServersFiles
-	case agenttask.ReadOnly(typ):
-		perm = rbac.ServersRead
-	}
-	if err := s.id.Require(ctx, actor, perm); err != nil {
+	if err := s.id.Require(ctx, actor, classPermission[agenttask.Class(typ)]); err != nil {
 		return nil, err
 	}
-	if agenttask.FileTask(typ) && !agenttask.ReadOnly(typ) {
+	if agenttask.NeedsReauth(typ, params) {
 		if err := s.id.RequireRecentReauth(actor); err != nil {
 			return nil, err
-		}
-	}
-	if typ == agenttask.ServiceAction {
-		var p agenttask.ServiceActionParams
-		_ = json.Unmarshal(params, &p)
-		if agenttask.Disruptive(p.Action) {
-			if err := s.id.RequireRecentReauth(actor); err != nil {
-				return nil, err
-			}
 		}
 	}
 	x, err := s.getInOrg(ctx, actor, serverID)
@@ -306,4 +289,14 @@ func (s *Service) RunJanitor(ctx context.Context, every time.Duration) {
 		case <-t.C:
 		}
 	}
+}
+
+// classPermission maps task permission classes to RBAC permissions.
+var classPermission = map[string]string{
+	agenttask.ClassRead: rbac.ServersRead,
+	// File contents can hold secrets, so even reading needs its own permission.
+	agenttask.ClassFiles:   rbac.ServersFiles,
+	agenttask.ClassOperate: rbac.ServersOperate,
+	// Adding or removing SSH keys grants or revokes login access to the server.
+	agenttask.ClassAccess: rbac.ServersAccess,
 }

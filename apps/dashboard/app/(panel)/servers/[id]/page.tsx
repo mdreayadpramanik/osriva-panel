@@ -14,8 +14,9 @@ import { ActivityPanel, ProcessesPanel } from "./processes";
 import { ServicesPanel } from "./services";
 import { FilesPanel } from "./files";
 import { LogsPanel } from "./logs";
+import { SystemPanel } from "./system";
 
-type Tab = "overview" | "metrics" | "services" | "processes" | "logs" | "files" | "activity";
+type Tab = "overview" | "metrics" | "services" | "processes" | "logs" | "files" | "system" | "activity";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "metrics", label: "Live metrics" },
@@ -23,6 +24,7 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "processes", label: "Processes" },
   { key: "logs", label: "Logs" },
   { key: "files", label: "Files" },
+  { key: "system", label: "System" },
   { key: "activity", label: "Activity" },
 ];
 
@@ -192,6 +194,7 @@ export default function ServerDetailPage() {
       {tab === "processes" && <ProcessesPanel serverId={s.id} online={s.connection === "online"} />}
       {tab === "logs" && <LogsPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}
       {tab === "files" && <FilesPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}
+      {tab === "system" && <SystemPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}
       {tab === "activity" && <ActivityPanel serverId={s.id} />}
 
       {tab === "overview" && (inv ? (

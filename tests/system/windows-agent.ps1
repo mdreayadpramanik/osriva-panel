@@ -119,6 +119,20 @@ try {
     if ((Run-Task 'files.delete' @{ path = $dir }).status -ne 'succeeded') { throw 'delete dir failed' }
     if ((Invoke-WebRequest -UseBasicParsing -WebSession $script:session "$panel/servers/$id/tasks?limit=50").Content -like '*hunter2*') { throw 'file content leaked into the task list' }
 
+    Step 'users, scheduled tasks, time'
+    $u = Run-Task 'users.list'
+    if ($u.status -ne 'succeeded' -or -not ($u.result.users | Where-Object name -eq 'Administrator') -or -not ($u.result.groups | Where-Object name -eq 'Administrators')) { throw "users.list: $($u.error)" }
+    $c = Run-Task 'cron.list'
+    if ($c.status -ne 'succeeded' -or $c.result.backend -ne 'windows-task-scheduler') { throw "cron.list: $($c.error)" }
+    $ti = Run-Task 'system.time'
+    if ($ti.status -ne 'succeeded' -or -not $ti.result.timezone) { throw "system.time: $($ti.error)" }
+    $oldTz = $ti.result.timezone
+    $tz = Run-Task 'system.timezone' @{ timezone = 'Bangladesh Standard Time' }
+    if ($tz.status -ne 'succeeded' -or (tzutil /g) -ne 'Bangladesh Standard Time') { throw "timezone: $($tz.status) $($tz.error)" }
+    Run-Task 'system.timezone' @{ timezone = $oldTz } | Out-Null
+    $k = Run-Task 'sshkeys.list' @{ user = 'runneradmin' }
+    if ($k.status -ne 'failed' -or $k.error -notlike '*not supported*') { throw 'sshkeys.list should be unsupported on Windows' }
+
     Step 'live metrics arrive'
     Wait-Until 90 'metrics with CPU and memory' {
         $m = Api Get "/servers/$id/metrics?minutes=10"

@@ -49,6 +49,9 @@ func Execute(ctx context.Context, typ string, params json.RawMessage) (any, erro
 	if agenttask.FileTask(typ) {
 		return fileTask(ctx, currentGuard(), typ, params)
 	}
+	if out, ok, err := systemTask(ctx, typ, params); ok {
+		return out, err
+	}
 	return nil, fmt.Errorf("%w: %s", agenttask.ErrInvalid, typ)
 }
 
@@ -88,4 +91,40 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return out, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 	}
 	return out, nil
+}
+
+func systemTask(ctx context.Context, typ string, params json.RawMessage) (any, bool, error) {
+	var out any
+	var err error
+	switch typ {
+	case agenttask.UsersList:
+		out, err = listUsers(ctx)
+	case agenttask.CronList:
+		out, err = listCron(ctx)
+	case agenttask.TimeInfo:
+		out, err = timeInfo(ctx)
+	case agenttask.SSHKeysList:
+		var p agenttask.UserParams
+		_ = json.Unmarshal(params, &p)
+		out, err = listSSHKeys(ctx, p.User)
+	case agenttask.SSHKeysAdd:
+		var p agenttask.SSHKeyAddParams
+		_ = json.Unmarshal(params, &p)
+		out, err = addSSHKey(ctx, p.User, p.Key)
+	case agenttask.SSHKeysRemove:
+		var p agenttask.SSHKeyRemoveParams
+		_ = json.Unmarshal(params, &p)
+		out, err = removeSSHKey(ctx, p.User, p.Fingerprint)
+	case agenttask.HostnameSet:
+		var p agenttask.HostnameParams
+		_ = json.Unmarshal(params, &p)
+		out, err = setHostname(ctx, p.Hostname)
+	case agenttask.TimezoneSet:
+		var p agenttask.TimezoneParams
+		_ = json.Unmarshal(params, &p)
+		out, err = setTimezone(ctx, p.Timezone)
+	default:
+		return nil, false, nil
+	}
+	return out, true, err
 }

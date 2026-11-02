@@ -122,6 +122,40 @@ task files.delete '{"path":"/srv"}' | jq -e '.status == "failed"' >/dev/null || 
 api GET "/servers/$SERVER_ID/tasks?limit=50" | grep -q hunter2 && fail "file content leaked into the task list"
 sudo rm -rf /srv/osriva-system-test
 
+step "users, SSH keys, cron, hostname and timezone (agent runs as root)"
+task users.list '{}' | jq -e '.status == "succeeded" and ([.result.users[] | select(.name == "root")] | length == 1)' >/dev/null
+sudo useradd --create-home --shell /bin/bash osriva-ci
+KEY_DIR="$(mktemp -d)"
+ssh-keygen -q -t ed25519 -N '' -C osriva-ci-key -f "$KEY_DIR/id"
+PUB="$(cat "$KEY_DIR/id.pub")"
+FP="$(ssh-keygen -lf "$KEY_DIR/id.pub" | awk '{print $2}')"
+task sshkeys.add "$(jq -nc --arg k "$PUB" '{user:"osriva-ci",key:$k}')" | jq -e '.status == "succeeded" and .result.added == true' >/dev/null
+sudo stat -c '%a %U' /home/osriva-ci/.ssh | grep -qx '700 osriva-ci' || fail "~/.ssh owner/mode"
+sudo stat -c '%a %U' /home/osriva-ci/.ssh/authorized_keys | grep -qx '600 osriva-ci' || fail "authorized_keys owner/mode"
+task sshkeys.list '{"user":"osriva-ci"}' | jq -e --arg fp "$FP" '[.result.keys[] | select(.fingerprint == $fp)] | length == 1' >/dev/null
+# A key with forced-command options is refused before it reaches the agent.
+! api POST "/servers/$SERVER_ID/tasks" "$(jq -nc --arg k "command=\"/bin/true\" $PUB" '{type:"sshkeys.add",params:{user:"osriva-ci",key:$k}}')" >/dev/null 2>&1 || fail 'key with options was accepted'
+task sshkeys.remove "$(jq -nc --arg fp "$FP" '{user:"osriva-ci",fingerprint:$fp}')" | jq -e '.status == "succeeded" and .result.removed == 1' >/dev/null
+sudo grep -q osriva-ci-key /home/osriva-ci/.ssh/authorized_keys && fail "key still present after removal"
+# A planted symlink must not make root write elsewhere.
+sudo rm -f /home/osriva-ci/.ssh/authorized_keys
+sudo ln -s /etc/shadow /home/osriva-ci/.ssh/authorized_keys
+task sshkeys.add "$(jq -nc --arg k "$PUB" '{user:"osriva-ci",key:$k}')" | jq -e '.status == "failed" and (.error | contains("symbolic link"))' >/dev/null || fail "followed an authorized_keys symlink"
+sudo grep -q osriva-ci-key /etc/shadow && fail "/etc/shadow was modified"
+sudo userdel -r osriva-ci 2>/dev/null || true
+echo '17 3 * * * root /usr/bin/true osriva-ci-cron' | sudo tee /etc/cron.d/osriva-ci >/dev/null
+task cron.list '{}' | jq -e '[.result.entries[] | select(.command | contains("osriva-ci-cron")) | select(.user == "root" and .schedule == "17 3 * * *")] | length == 1' >/dev/null
+sudo rm -f /etc/cron.d/osriva-ci
+OLD_TZ="$(timedatectl show --property=Timezone --value)"
+task system.timezone '{"timezone":"Asia/Dhaka"}' | jq -e '.status == "succeeded" and .result.timezone == "Asia/Dhaka"' >/dev/null
+[ "$(timedatectl show --property=Timezone --value)" = Asia/Dhaka ] || fail "timezone not applied"
+task system.timezone '{"timezone":"Mars/Olympus_Mons"}' | jq -e '.status == "failed"' >/dev/null || fail "unknown timezone accepted"
+task system.timezone "$(jq -nc --arg tz "$OLD_TZ" '{timezone:$tz}')" >/dev/null
+OLD_HN="$(hostname)"
+task system.hostname '{"hostname":"osriva-ci-host"}' | jq -e '.status == "succeeded" and .result.hostname == "osriva-ci-host"' >/dev/null
+[ "$(hostname)" = osriva-ci-host ] || fail "hostname not applied"
+task system.hostname "$(jq -nc --arg h "$OLD_HN" '{hostname:$h}')" >/dev/null
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

@@ -232,3 +232,35 @@ func TestFileTaskPermissionsAndRedaction(t *testing.T) {
 		t.Fatalf("auditor read a file task result: %v", err)
 	}
 }
+
+func TestAccessTasksNeedServersAccessAndReauth(t *testing.T) {
+	e := newAgentEnv(t)
+	res, _ := e.enroll(e.addServer("access-1"))
+	id := res.Response.ServerID
+	ctx := context.Background()
+	auditor := e.principal("auditor3@example.com", rbac.RoleAuditor)
+	key := json.RawMessage(`{"user":"deploy","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb6m1lDjp0dmKt8/a2QvYgDphMwHsUeyGnUjjZyyrnD ci"}`)
+
+	for _, typ := range []string{agenttask.UsersList, agenttask.CronList, agenttask.TimeInfo} {
+		if _, err := e.fleet.QueueTask(ctx, auditor, id, typ, nil); err != nil {
+			t.Fatalf("auditor %s: %v", typ, err)
+		}
+	}
+	if _, err := e.fleet.QueueTask(ctx, auditor, id, agenttask.SSHKeysAdd, key); !errors.Is(err, identity.ErrForbidden) {
+		t.Fatalf("auditor added an SSH key: %v", err)
+	}
+	if _, err := e.fleet.QueueTask(ctx, auditor, id, agenttask.HostnameSet, json.RawMessage(`{"hostname":"x"}`)); !errors.Is(err, identity.ErrForbidden) {
+		t.Fatalf("auditor renamed the host: %v", err)
+	}
+	stale := *e.owner
+	sess := *e.owner.Session
+	old := time.Now().Add(-time.Hour)
+	sess.ReauthenticatedAt = &old
+	stale.Session = &sess
+	if _, err := e.fleet.QueueTask(ctx, &stale, id, agenttask.SSHKeysAdd, key); !errors.Is(err, identity.ErrReauthRequired) {
+		t.Fatalf("SSH key without reauth: %v", err)
+	}
+	if _, err := e.fleet.QueueTask(ctx, e.owner, id, agenttask.SSHKeysAdd, key); err != nil {
+		t.Fatalf("owner adds a key: %v", err)
+	}
+}
