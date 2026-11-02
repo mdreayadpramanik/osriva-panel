@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/osriva/osriva-panel/services/api/internal/rbac"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 // Panel operating modes. Provider Mode features arrive in Phase 10; the

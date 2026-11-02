@@ -115,6 +115,8 @@ type AuditFilter struct {
 }
 
 type Store interface {
+	ServerStore
+
 	Ping(ctx context.Context) error
 	Close()
 
@@ -150,4 +152,77 @@ type Store interface {
 	// Settings
 	GetSetting(ctx context.Context, key string) (json.RawMessage, error)
 	PutSetting(ctx context.Context, key string, value json.RawMessage, updatedBy *string) error
+}
+
+// ---- Servers and agents (Phase 2) ----
+
+type ServerStatus string
+
+const (
+	ServerPending ServerStatus = "pending"
+	ServerActive  ServerStatus = "active"
+	ServerRevoked ServerStatus = "revoked"
+)
+
+// ServerFacts are the inventory fields denormalised onto the server row for listing.
+type ServerFacts struct {
+	Hostname, OSFamily, OSName, OSVersion, Kernel, Arch, AgentVersion string
+}
+
+type Server struct {
+	ID                  string
+	OrganizationID      string
+	Name                string
+	Status              ServerStatus
+	EnrollmentTokenHash []byte
+	EnrollmentExpiresAt *time.Time
+	Facts               ServerFacts
+	LastSeenAt          *time.Time
+	LastSeenIP          string
+	EnrolledAt          *time.Time
+	CreatedBy           *string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type AgentCertificate struct {
+	Serial      string
+	ServerID    string
+	Fingerprint string
+	NotAfter    time.Time
+	IssuedAt    time.Time
+	RevokedAt   *time.Time
+}
+
+type ServerInventory struct {
+	ServerID     string
+	CollectedAt  time.Time
+	ReceivedAt   time.Time
+	Data         json.RawMessage
+	Capabilities json.RawMessage
+}
+
+// ServerStore persists managed servers, enrolment and agent credentials.
+type ServerStore interface {
+	GetAgentCA(ctx context.Context) (certPEM string, keyEnc []byte, err error)
+	// InsertAgentCA returns ErrConflict when a CA already exists.
+	InsertAgentCA(ctx context.Context, certPEM string, keyEnc []byte) error
+
+	CreateServer(ctx context.Context, s *Server) error
+	GetServer(ctx context.Context, id string) (*Server, error)
+	ListServers(ctx context.Context, organizationID string) ([]Server, error)
+	// SetEnrollmentToken replaces the token of a pending server (ErrConflict otherwise).
+	SetEnrollmentToken(ctx context.Context, id string, hash []byte, expiresAt time.Time) error
+	// FindPendingEnrollment returns the pending server whose unexpired token hashes to hash.
+	FindPendingEnrollment(ctx context.Context, hash []byte, now time.Time) (*Server, error)
+	// CompleteEnrollment atomically consumes the token, activates the server and
+	// stores its first certificate. ErrNotFound if the token is no longer valid.
+	CompleteEnrollment(ctx context.Context, serverID string, hash []byte, now time.Time, cert *AgentCertificate) error
+	AddAgentCertificate(ctx context.Context, c *AgentCertificate) error
+	GetAgentCertificate(ctx context.Context, serial string) (*AgentCertificate, error)
+	// RevokeServer marks the server revoked, drops any token and revokes all certificates.
+	RevokeServer(ctx context.Context, id string, now time.Time) error
+	// RecordReport stores the latest facts, last-seen data and inventory snapshot.
+	RecordReport(ctx context.Context, serverID string, facts ServerFacts, ip string, now time.Time, inv *ServerInventory) error
+	GetServerInventory(ctx context.Context, serverID string) (*ServerInventory, error)
 }

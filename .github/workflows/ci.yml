@@ -36,6 +36,16 @@ jobs:
       - name: Test (with race detector and PostgreSQL integration tests)
         run: go test -race -count=1 ./...
       - run: go build -o /dev/null ./services/api/cmd/osriva-api
+      - name: Agent inventory on a real Linux host (Ubuntu runner)
+        run: |
+          go run ./agent/cmd/osriva-agent inventory --capabilities | tee inventory.json
+          jq -e '.inventory.os.family == "linux" and (.inventory.memory.total_bytes > 0) and (.inventory.disks | length > 0) and (.inventory.os.name | length > 0)' inventory.json
+      - name: Cross-compile the agent
+        run: |
+          for t in linux/amd64 linux/arm64 linux/arm windows/amd64 windows/arm64 freebsd/amd64 freebsd/arm64 openbsd/amd64 netbsd/amd64; do
+            echo "building $t"
+            GOOS=${t%/*} GOARCH=${t#*/} CGO_ENABLED=0 go build -o /dev/null ./agent/cmd/osriva-agent
+          done
 
   dashboard:
     runs-on: ubuntu-latest

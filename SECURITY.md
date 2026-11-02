@@ -27,6 +27,10 @@ a security contact address and a PGP key.)*
 | Logging | Structured logs without bodies, headers or query strings. Request IDs sanitised. | `accessLog` |
 | Audit | Append-only audit table for logins (success/failure), logout, reauth, password/MFA changes, user/role changes, setting changes, authorization denials and escalation attempts | `audit_logs` |
 | Containers | API: distroless, non-root, static binary. Dashboard: non-root. PostgreSQL on an internal-only network. | `infrastructure/docker` |
+| Agent identity | Internal ECDSA P-256 CA (key encrypted at rest), 30-day client certs bound to the server ID, renewal with fresh keys, revocation checked on every request | `internal/pki`, `internal/fleet` |
+| Agent enrolment | One-time 256-bit token (hash stored, 1 h, atomic single use), CA fingerprint pinned **before** the token is sent, CSR signature + key strength checked, CSR subject ignored, per-IP rate limit, all attempts audited | `fleet.Enroll`, `pkg/agentclient` |
+| Agent channel | Separate TLS 1.3 listener, client certificate required and verified, agent requests ignore forwarded headers, 1 MiB bodies, schema version checked, agent clock not trusted | `httpapi.NewAgentHandler` |
+| Agent scope | The agent executes **no** commands from the control plane in Phase 2 | `agent/` |
 
 ## Known limitations and risks
 

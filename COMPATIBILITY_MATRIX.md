@@ -19,17 +19,23 @@ Last updated: 2026-11-02 (Phase 1).
 | PostgreSQL 17 | SUPPORTED | Store contract suite and migration idempotency test passed in CI on 2026-11-02. |
 | PostgreSQL 16 | NOT_TESTED | Schema uses only PG ≥ 13 features. Not run in CI. |
 
-## Managed servers (OSRIVA Agent)
+## Managed servers: OSRIVA Agent (Phase 2a)
 
-The agent does not exist yet (Phase 2). Every managed OS below is therefore
-`UNSUPPORTED` today, regardless of eventual plans.
+What the agent can do today: enrol, report inventory, renew its certificate.
+It cannot manage anything yet (Phase 3+). The status below is for **inventory
+and enrolment only**.
 
-| OS family | Targets | Status |
-|-----------|---------|--------|
-| Linux | Ubuntu, Debian, Fedora, RHEL, AlmaLinux, Rocky, openSUSE/SUSE, Arch | UNSUPPORTED (Phase 2) |
-| Windows | Windows Server | UNSUPPORTED (Phase 2) |
-| BSD / Unix-like | FreeBSD, OpenBSD, NetBSD, illumos | UNSUPPORTED (Phase 2) |
-| Immutable / restricted OSes | e.g. Fedora CoreOS, Talos, ChromeOS | UNSUPPORTED. A conventional agent install may be impossible. Each will be assessed individually. |
+| Platform | Status | Evidence / notes |
+|----------|--------|------------------|
+| Windows 11 x86_64 | SUPPORTED | Real agent enrolled, reported and was revoked on Windows 11 Pro 25H2 (2026-11-02). |
+| Windows Server | NOT_TESTED | Same Win32/registry code paths as Windows 11; not run on Server yet. |
+| Windows ARM64 | NOT_TESTED | Compiles. |
+| Linux x86_64 (Ubuntu, Debian, RHEL family, SUSE, Arch …) | NOT_TESTED | Parsers unit-tested with real file formats; `Collect()` runs in CI on Ubuntu after the next push. |
+| Linux ARM64 / ARMv7 | NOT_TESTED | Compiles. |
+| FreeBSD | NOT_TESTED | sysctl + getfsstat collector compiles; never run. |
+| OpenBSD, NetBSD | PARTIALLY_SUPPORTED (expected) | Compiles; disk inventory not implemented (reported as a warning). Never run. |
+| illumos, macOS | UNSUPPORTED | Only portable facts (hostname, arch, NICs) are collected. |
+| Immutable OSes (Fedora CoreOS, Flatcar, Talos …) | PARTIALLY_SUPPORTED (expected) | Detected and flagged by the compatibility engine. A conventional agent install may be impossible. Assessed individually. |
 
 ## Runtimes, frameworks, CMS, databases, virtualization
 

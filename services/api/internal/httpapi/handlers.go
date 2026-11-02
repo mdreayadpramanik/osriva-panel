@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/osriva/osriva-panel/services/api/internal/identity"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 // ---- response DTOs (never include hashes, secrets or tokens) ----

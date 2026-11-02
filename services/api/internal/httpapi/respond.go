@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/identity"
-	"github.com/osriva/osriva-panel/services/api/internal/reqmeta"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/reqmeta"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 const maxBodyBytes = 1 << 20
@@ -47,6 +48,12 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		s.writeError(w, r, http.StatusBadRequest, "validation_failed", ve.Field+" "+ve.Message, ve.Field)
 	case errors.As(err, &pe):
 		s.writeError(w, r, http.StatusConflict, "policy_violation", pe.Message, "")
+	case errors.Is(err, fleet.ErrInvalidEnrollment):
+		s.writeError(w, r, http.StatusUnauthorized, "invalid_enrollment_token", err.Error(), "")
+	case errors.Is(err, fleet.ErrAgentNotConfigured):
+		s.writeError(w, r, http.StatusServiceUnavailable, "agent_endpoint_not_configured", err.Error(), "")
+	case errors.Is(err, fleet.ErrAgentForbidden):
+		s.writeError(w, r, http.StatusForbidden, "agent_forbidden", err.Error(), "")
 	case errors.Is(err, identity.ErrInvalidCredentials):
 		s.writeError(w, r, http.StatusUnauthorized, "invalid_credentials", err.Error(), "")
 	case errors.Is(err, identity.ErrMFARequired):

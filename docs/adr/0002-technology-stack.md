@@ -25,5 +25,4 @@ introduced with the background worker or distributed rate limiting.
 ## Consequences
 
 * All dependencies are OSI-licensed (MIT/BSD-3/Apache-2.0) and compatible with AGPL-3.0.
-* The Go module path `github.com/osriva/osriva-panel` is a placeholder until the
-  public repository location is decided.
+* Go module path: `github.com/mdreayadpramanik/osriva-panel`, matching the GitHub repository.

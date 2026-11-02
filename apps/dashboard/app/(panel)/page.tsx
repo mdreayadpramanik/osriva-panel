@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, errorMessage, type AuditEntry, type Meta } from "@/lib/api";
+import { api, errorMessage, type AuditEntry, type Meta, type Server } from "@/lib/api";
 import { relativeTime } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Card, EmptyState, LoadingBlock, PageHeader } from "@/components/ui";
@@ -12,10 +12,16 @@ export default function OverviewPage() {
   const { me, can } = useSession();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [activity, setActivity] = useState<AuditEntry[] | null>(null);
+  const [servers, setServers] = useState<Server[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api<Meta>("/meta").then(setMeta).catch((e) => setError(errorMessage(e)));
+    if (can("servers.read")) {
+      api<{ servers: Server[] }>("/servers")
+        .then((r) => setServers(r.servers))
+        .catch((e) => setError(errorMessage(e)));
+    }
     if (can("audit.read")) {
       api<{ entries: AuditEntry[] }>("/audit-logs?limit=8")
         .then((r) => setActivity(r.entries))
@@ -38,16 +44,36 @@ export default function OverviewPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card title="Servers" description="Machines managed by this panel" className="lg:col-span-2">
-          <EmptyState title="No servers connected">
-            Server registration needs the OSRIVA Agent, which is being built in Phase 2. Until an agent reports in,
-            this panel shows no server statistics. It never shows placeholder numbers.
-            <div className="mt-3">
-              <Link href="/roadmap" className="font-medium text-accent hover:underline">
-                See the roadmap →
+        <Card
+          title="Servers"
+          description="Machines managed by this panel"
+          className="lg:col-span-2"
+          actions={
+            can("servers.read") && (
+              <Link href="/servers" className="text-sm font-medium text-accent hover:underline">
+                Manage
               </Link>
+            )
+          }
+        >
+          {!can("servers.read") ? (
+            <p className="text-sm text-muted">You do not have permission to view servers.</p>
+          ) : servers === null ? (
+            <LoadingBlock />
+          ) : servers.length === 0 ? (
+            <EmptyState title="No servers connected">
+              Add a server and run its enrolment command to connect the OSRIVA Agent. This panel never shows placeholder statistics.
+            </EmptyState>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {(["online", "offline", "pending", "revoked"] as const).map((c) => (
+                <div key={c} className="rounded-lg border border-line p-4">
+                  <p className="text-2xl font-semibold tabular-nums">{servers.filter((s) => s.connection === c).length}</p>
+                  <p className="text-sm capitalize text-muted">{c === "pending" ? "awaiting agent" : c}</p>
+                </div>
+              ))}
             </div>
-          </EmptyState>
+          )}
         </Card>
 
         <Card title="Your account">

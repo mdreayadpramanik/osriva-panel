@@ -9,22 +9,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/rbac"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 // Run executes the contract. newStore must return an empty, migrated store.
 func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 	tests := map[string]func(t *testing.T, s store.Store){
-		"RolesSync":        testRolesSync,
-		"Users":            testUsers,
-		"UserRoles":        testUserRoles,
-		"Sessions":         testSessions,
-		"Audit":            testAudit,
-		"Settings":         testSettings,
-		"ListUsersPaging":  testListUsersPaging,
-		"UpdateClearsTOTP": testUpdateClearsTOTP,
+		"RolesSync":           testRolesSync,
+		"Users":               testUsers,
+		"UserRoles":           testUserRoles,
+		"Sessions":            testSessions,
+		"Audit":               testAudit,
+		"Settings":            testSettings,
+		"ListUsersPaging":     testListUsersPaging,
+		"UpdateClearsTOTP":    testUpdateClearsTOTP,
+		"AgentCA":             testAgentCA,
+		"ServerEnrollment":    testServerEnrollment,
+		"ServerTokenRotation": testServerTokenRotation,
+		"ServerReports":       testServerReports,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {

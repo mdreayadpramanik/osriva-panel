@@ -5,7 +5,7 @@ info:
   summary: One Platform. Every Server. Total Control.
   description: |
     Versioned REST API of OSRIVA Panel. Phase 1 covers identity, sessions, MFA,
-    RBAC, audit logging and panel settings.
+    RBAC, audit logging and panel settings. Phase 2a adds managed servers and agent enrolment.
 
     **Authentication.** `POST /auth/login` sets an `HttpOnly` session cookie
     (`osriva_session`). Every unsafe request (POST/PUT/PATCH/DELETE) made with
@@ -32,6 +32,8 @@ tags:
   - name: users
   - name: audit
   - name: settings
+  - name: servers
+  - name: agent
 
 components:
   securitySchemes:
@@ -478,3 +480,88 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Settings" }
         "403": { $ref: "#/components/responses/Error" }
+  /servers:
+    get:
+      tags: [servers]
+      summary: List managed servers (servers.read)
+      description: "`connection` is derived from the last agent report: online if one arrived in the last 3 minutes."
+      responses:
+        "200": { description: "`{servers: Server[]}`" }
+    post:
+      tags: [servers]
+      summary: Add a server and get its one-time enrolment command (servers.write)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$" }
+      responses:
+        "201": { description: "`{server, enrollment: {token, expires_at, panel_url, ca_fingerprint, command}}`. The token is shown only once." }
+        "409": { $ref: "#/components/responses/Error" }
+  /servers/agent-endpoint:
+    get:
+      tags: [servers]
+      summary: Whether agent enrolment is configured, and the CA fingerprint (servers.read)
+      responses:
+        "200": { description: "`{configured, agent_endpoint, ca_fingerprint}`" }
+  /servers/{id}:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [servers]
+      summary: Server with its latest inventory and capabilities (servers.read)
+      responses:
+        "200": { description: "`{server, inventory | null, capabilities: Capability[], inventory_received_at}`" }
+        "404": { $ref: "#/components/responses/Error" }
+  /servers/{id}/enrollment-token:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [servers]
+      summary: Replace the enrolment token of a server that has not enrolled yet (servers.write)
+      responses:
+        "200": { description: "`{enrollment}`" }
+        "409": { $ref: "#/components/responses/Error" }
+  /servers/{id}/revoke:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [servers]
+      summary: Revoke the server's agent certificates (servers.write + re-auth)
+      responses:
+        "204": { description: Revoked }
+        "403": { $ref: "#/components/responses/Error" }
+  /agent/ca:
+    get:
+      tags: [agent]
+      summary: Public agent CA certificate (agents verify its fingerprint before enrolling)
+      security: []
+      responses:
+        "200": { description: "`{ca_pem, fingerprint}`" }
+  /agent/enroll:
+    post:
+      tags: [agent]
+      summary: Exchange a one-time enrolment token and CSR for a client certificate
+      description: |
+        Called by `osriva-agent enroll`. The token is consumed atomically. After enrolment
+        the agent talks to the separate mutual-TLS listener (`OSRIVA_AGENT_PUBLIC_URL`):
+        `POST /agent/v1/report` (inventory, every 60 s) and `POST /agent/v1/renew` (new
+        certificate when a third of its 30-day lifetime remains). Those endpoints are not
+        part of this API server and require a client certificate issued by the agent CA.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, csr_pem]
+              properties:
+                token: { type: string }
+                csr_pem: { type: string, description: "PKCS#10 CSR, ECDSA P-256/P-384, Ed25519 or RSA >= 3072" }
+                agent_version: { type: string }
+      responses:
+        "200": { description: "`{server_id, server_name, certificate_pem, ca_pem, agent_endpoint}`" }
+        "401": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }

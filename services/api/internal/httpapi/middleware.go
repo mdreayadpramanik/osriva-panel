@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/identity"
-	"github.com/osriva/osriva-panel/services/api/internal/reqmeta"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/reqmeta"
 )
 
 const (

@@ -1,68 +1,80 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-02** · Current phase: **1 (Foundation): complete with caveats** · Next: **Phase 2 (Agent & installer)**
+Last updated: **2026-11-02** · Current phase: **2a (agent, enrolment, inventory, compatibility) done** · Next: **Phase 2b (installer)**
 
-**OSRIVA Panel is not production-ready.** It manages no servers yet.
+**OSRIVA Panel is not production-ready.** It can now enrol servers and show what
+their agents report. It cannot change anything on a server yet.
 
-## Phase 1 report
+## Phase 2a report
 
 ### Implemented and tested
 
-| Feature | Tests |
-|---------|-------|
-| Env-based configuration with strict validation (refuses insecure production config) | `config` unit tests |
-| Structured JSON logging, request IDs, access log without bodies/queries | HTTP tests (request-ID sanitising) |
-| Argon2id password hashing, policy, automatic rehash | `auth` unit tests |
-| TOTP MFA (RFC 6238), encrypted secret, replay protection, enrol/enable/disable | RFC test vectors + lifecycle test |
-| AES-256-GCM secret encryption with purpose-derived keys | `secrets` unit tests (tamper, wrong AAD, wrong key) |
-| Sessions: hashed tokens, TTL + idle timeout, logout, revoke one/others, revoke on password change and disable | `identity` tests |
-| CSRF protection, strict JSON input, body limits, security headers | `httpapi` tests |
-| Login brute-force protection (per-IP + per-account lockout), indistinguishable failures | `identity` tests |
-| RBAC: permission catalog, 4 built-in roles synced at startup, anti-escalation, last-owner rule, no self-disable | `rbac` + `identity` tests |
-| Re-authentication ("sudo mode") for dangerous operations | `identity` test |
-| Organization scoping of user queries | `identity` test |
-| User management API (list/search, create, update name/status/roles, admin session revoke) | `identity` + `httpapi` tests |
-| Audit log (append-only, filters, keyset pagination) incl. denials and escalation attempts | `storetest` + `identity` + `httpapi` |
-| Panel mode setting (personal/provider), owner-only + re-auth | `identity` test |
-| Store contract suite run against the in-memory store | `storetest` via `memstore` |
-| OpenAPI 3.1 spec served at `/api/v1/openapi.yaml` | — (hand-written, see "Missing") |
-| CLI: `serve`, `migrate`, `admin create`, `gen-secret`, `version` | `serve` + `version` run manually |
-| Dashboard: login (incl. TOTP step), overview, users & roles, audit log, account (password, 2FA, sessions, security activity), settings, roadmap; light/dark/system theme; responsive shell | `tsc` + `next build`. In a browser against the real API: login, redirect when signed out, user creation and disable, CSRF rejection, HttpOnly cookie, rendering of every page. |
+| Feature | Tests / evidence |
+|---------|------------------|
+| Internal agent CA (ECDSA P-256), key encrypted at rest, created on first start, concurrency-safe | `pki` tests; created on a real start |
+| One-time enrolment tokens (hashed, 1 h, single use, atomic consumption, rotation) | `storetest` + e2e |
+| CA pinning: agent verifies the CA fingerprint **before** sending the token | e2e test + real agent on this PC |
+| Mutual-TLS agent listener (TLS 1.3, client cert required, per-request revocation/expiry/status check) | e2e tests incl. no-cert and rogue-CA rejection |
+| Certificate renewal (30-day certs, renew at 1/3 lifetime, new key each time) | e2e test |
+| Server revocation (all certs revoked, agent locked out immediately; re-auth required) | e2e test + real agent |
+| Inventory: OS, kernel, arch, CPU, memory, disks, NICs, uptime, privileges, init system, package managers, tools, virtualization, immutability | Linux parsers with fixtures; `Collect()` run on real Windows 11 |
+| Compatibility engine (6 statuses, reasons, alternatives; never SUPPORTED for unbuilt modules) | `compat` tests |
+| Agent CLI: `inventory`, `enroll`, `run` (backoff, renewal), `status`; atomic credential writes | `state` tests + real run |
+| Servers API (`/servers`, detail, token regeneration, revoke) + OpenAPI | e2e + browser |
+| Dashboard: Servers list (online/offline/pending/revoked), Add-server flow with one-time command, server detail (system, hardware, network, storage, compatibility), overview counts | `tsc` + `next build`; detail page checked in a browser with the real agent's data |
+| Store contract extended (CA, servers, enrolment, certificates, reports) | memstore locally; PostgreSQL in CI |
 
-Totals: 45 Go test cases pass locally; the 2 PostgreSQL integration tests skip locally (no database here) and pass in CI.
+**Real end-to-end run (2026-11-02, this Windows 11 PC):** an actual `osriva-agent.exe`
+was enrolled through the panel, reported over mutual TLS, and the dashboard showed
+this PC's real hardware. A wrong fingerprint was refused before the token was
+sent, the replayed token was rejected, and after revocation the agent got 403.
+
+Builds: the agent compiles for linux/amd64, linux/arm64, windows/amd64, windows/arm64,
+freebsd, openbsd and netbsd (checked locally; CI also runs the Linux inventory on Ubuntu).
 
 ### Partially implemented / untested
 
-* **PostgreSQL store and migrator:** the store contract suite and migration tests passed against
-  PostgreSQL 17 in GitHub Actions CI (2026-11-02, commit 3b7d96e). Not yet exercised by a running deployment.
-* **Docker:** both images built in CI. The Compose stack and Caddyfile have **never been started**.
-* **Dashboard UI clicks:** the browser checks used in-page API calls and page rendering.
-  Modal dialogs and buttons were not clicked through, because the app window was hidden during verification.
-* **Mobile/tablet layout:** responsive classes exist but were not visually checked.
-* **Organizations:** only the default organization exists. No UI or API to create more.
+* **Linux inventory on a real host:** parsers unit-tested, `Collect()` runs in CI on
+  the Ubuntu runner (after the next push). It has not been run on a real VPS.
+* **BSD inventory:** compiles, never run. Disk inventory on OpenBSD/NetBSD is not
+  implemented and reported as a warning.
+* **No agent service:** `osriva-agent run` must be started by hand. Service
+  installation (systemd/OpenRC/Windows SCM/rc.d) is Phase 2b.
+* **Compose:** the agent port (8443) is wired up but the stack has never been started.
+* **Phase 1 caveats still apply:** UI dialogs not clicked through, mobile layout not checked.
 
-### Missing (from Phase 1 scope)
+### Missing
 
-* Automated contract test that `openapi.yaml` matches the handlers.
-* Frontend unit/e2e tests (Playwright planned) and ESLint configuration.
-* Admin-initiated password reset, MFA recovery codes, QR code for TOTP enrolment.
-* Custom role editor (the schema supports custom roles. There is no API/UI for them).
-* Verbatim license texts in `LICENSE`.
-* `govulncheck` in CI.
+* Universal installer (detect → plan → approve → install → verify; upgrade/repair/rollback/uninstall).
+* Signed agent releases and checksums.
+* Live metrics (CPU %, network throughput) arrive in Phase 3. Phase 2 reports a snapshot every 60 s.
+* Deleting servers (only revoke exists).
 
 ### Known bugs
 
-* None known. Unverified areas are listed above.
+* None known.
 
 ### Security concerns
 
-See [SECURITY.md](SECURITY.md#known-limitations-and-risks): in-process rate limiting,
-lockout-based DoS, no key rotation, no account recovery tooling, unbounded audit retention.
+* Agent private key file is `0600` on Unix. On Windows, its protection relies on the
+  directory ACL, which the Phase 2b installer must set. Until then, prefer an
+  admin-only `--config-dir`.
+* The enrolment token is passed on the command line (visible to other local users
+  in the process list while `enroll` runs). `OSRIVA_ENROLL_TOKEN` can be used instead.
+* Agent audit events are attributed to the default organization (single-org today).
+
+## Phase 1 report (foundation)
+
+Done 2026-11-02: authentication, sessions, TOTP, RBAC, user management, audit log,
+settings, dashboard core. CI (2026-11-02, `3b7d96e`) passed, including the
+PostgreSQL 17 store contract and migration tests and both Docker image builds.
+Remaining Phase 1 gaps: see [TASKS.md](TASKS.md).
 
 ## Phase overview
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Architecture, API, DB, auth, RBAC, logging, dashboard core | ✅ Done (caveats above) |
-| 2 | Agent, installer, OS/hardware detection, compatibility engine, registration | ⏭ Next |
+| 1 | Architecture, API, DB, auth, RBAC, logging, dashboard core | ✅ Done |
+| 2a | Agent, secure enrolment, mTLS, inventory, compatibility engine, Servers UI | ✅ Done (caveats above) |
+| 2b | Universal installer, agent service install, signed releases | ⏭ Next |
 | 3–14 | See [TASKS.md](TASKS.md) | Not started |

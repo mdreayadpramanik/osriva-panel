@@ -8,12 +8,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/logging"
-	"github.com/osriva/osriva-panel/services/api/internal/secrets"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
 )
 
 const (
@@ -34,7 +35,15 @@ type Config struct {
 	LogFormat          string
 	TrustedProxies     []netip.Prefix
 	DevMemoryStore     bool
+
+	// Agent endpoint (all three empty = agents cannot enrol yet).
+	PublicURL      string // base URL users and agents use for the panel, e.g. https://panel.example.com
+	AgentAddr      string // listen address of the mutual-TLS agent listener, e.g. :8443
+	AgentPublicURL string // https URL agents use to reach AgentAddr, e.g. https://panel.example.com:8443
 }
+
+// AgentEnabled reports whether agent enrolment is configured.
+func (c *Config) AgentEnabled() bool { return c.AgentAddr != "" }
 
 // Load reads configuration using getenv (os.Getenv in production).
 func Load(getenv func(string) string) (*Config, error) {
@@ -118,6 +127,25 @@ func Load(getenv func(string) string) (*Config, error) {
 			}
 		}
 		c.TrustedProxies = append(c.TrustedProxies, pfx.Masked())
+	}
+
+	c.PublicURL = strings.TrimRight(get("OSRIVA_PUBLIC_URL", ""), "/")
+	c.AgentAddr = get("OSRIVA_AGENT_ADDR", "")
+	c.AgentPublicURL = strings.TrimRight(get("OSRIVA_AGENT_PUBLIC_URL", ""), "/")
+	if c.AgentAddr != "" || c.AgentPublicURL != "" {
+		if c.AgentAddr == "" || c.AgentPublicURL == "" || c.PublicURL == "" {
+			errs = append(errs, errors.New("OSRIVA_AGENT_ADDR, OSRIVA_AGENT_PUBLIC_URL and OSRIVA_PUBLIC_URL must be set together"))
+		}
+		if u, err := url.Parse(c.AgentPublicURL); c.AgentPublicURL != "" && (err != nil || u.Scheme != "https" || u.Hostname() == "" || u.Path != "") {
+			errs = append(errs, errors.New("OSRIVA_AGENT_PUBLIC_URL: must be an https:// URL without a path"))
+		}
+	}
+	if c.PublicURL != "" {
+		u, err := url.Parse(c.PublicURL)
+		insecureOK := c.Env == EnvDevelopment && err == nil && u.Scheme == "http"
+		if err != nil || u.Hostname() == "" || (u.Scheme != "https" && !insecureOK) {
+			errs = append(errs, errors.New("OSRIVA_PUBLIC_URL: must be an https:// URL (http:// only in development)"))
+		}
 	}
 
 	if c.DevMemoryStore && c.Env != EnvDevelopment {

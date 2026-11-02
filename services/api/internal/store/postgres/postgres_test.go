@@ -5,9 +5,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/osriva/osriva-panel/migrations"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
-	"github.com/osriva/osriva-panel/services/api/internal/store/storetest"
+	"github.com/mdreayadpramanik/osriva-panel/migrations"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store/storetest"
 )
 
 // These tests need a disposable PostgreSQL database. They DROP and recreate

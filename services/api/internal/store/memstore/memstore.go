@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 type Store struct {
@@ -26,6 +26,12 @@ type Store struct {
 	audit       []store.AuditEntry
 	settings    map[string]json.RawMessage
 	nextAudit   int64
+
+	caCert    string
+	caKey     []byte
+	servers   map[string]*store.Server
+	certs     map[string]*store.AgentCertificate // by serial
+	inventory map[string]*store.ServerInventory  // by server ID
 }
 
 var _ store.Store = (*Store)(nil)
@@ -35,6 +41,8 @@ func New() *Store {
 		permissions: map[string]string{}, roles: map[string]*store.Role{},
 		users: map[string]*store.User{}, userRoles: map[string][]string{},
 		sessions: map[string]*store.Session{}, settings: map[string]json.RawMessage{},
+		servers: map[string]*store.Server{}, certs: map[string]*store.AgentCertificate{},
+		inventory: map[string]*store.ServerInventory{},
 	}
 }
 

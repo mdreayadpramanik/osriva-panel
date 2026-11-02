@@ -13,8 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 type Store struct {

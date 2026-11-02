@@ -13,11 +13,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/identity"
-	"github.com/osriva/osriva-panel/services/api/internal/rbac"
-	"github.com/osriva/osriva-panel/services/api/internal/secrets"
-	"github.com/osriva/osriva-panel/services/api/internal/store/memstore"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store/memstore"
 )
 
 const pw = "a long enough password"

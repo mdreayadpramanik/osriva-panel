@@ -18,16 +18,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/osriva/osriva-panel/migrations"
-	"github.com/osriva/osriva-panel/services/api/internal/config"
-	"github.com/osriva/osriva-panel/services/api/internal/httpapi"
-	"github.com/osriva/osriva-panel/services/api/internal/identity"
-	"github.com/osriva/osriva-panel/services/api/internal/logging"
-	"github.com/osriva/osriva-panel/services/api/internal/rbac"
-	"github.com/osriva/osriva-panel/services/api/internal/secrets"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
-	"github.com/osriva/osriva-panel/services/api/internal/store/memstore"
-	"github.com/osriva/osriva-panel/services/api/internal/store/postgres"
+	"github.com/mdreayadpramanik/osriva-panel/migrations"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/config"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/httpapi"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store/memstore"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store/postgres"
 )
 
 // version is set at build time: -ldflags "-X main.version=1.2.3".
@@ -84,6 +85,7 @@ type runtime struct {
 	store store.Store
 	pg    *postgres.Store // nil when using the development memory store
 	id    *identity.Service
+	keys  *secrets.Keyring
 }
 
 func setup(ctx context.Context) (*runtime, error) {
@@ -107,6 +109,7 @@ func setup(ctx context.Context) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	rt.keys = keys
 	rt.id, err = identity.New(identity.Options{
 		Store: rt.store, Keys: keys, Log: log,
 		SessionTTL: cfg.SessionTTL, IdleTimeout: cfg.SessionIdleTimeout, ReauthWindow: cfg.ReauthWindow,
@@ -175,38 +178,69 @@ func cmdServe() error {
 		}
 	}
 
-	srv := &http.Server{
-		Addr: rt.cfg.HTTPAddr,
-		Handler: httpapi.New(httpapi.Options{
-			Identity: rt.id, DB: rt.store, Log: rt.log, Version: version,
-			CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
-		}),
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		MaxHeaderBytes:    64 << 10,
-		ErrorLog:          slog.NewLogLogger(rt.log.Handler(), slog.LevelWarn),
+	fl, err := fleet.New(ctx, fleet.Options{
+		Store: rt.store, Identity: rt.id, Keys: rt.keys, Log: rt.log,
+		PanelURL: rt.cfg.PublicURL, AgentURL: rt.cfg.AgentPublicURL,
+	})
+	if err != nil {
+		return err
 	}
-	errCh := make(chan error, 1)
+	opts := httpapi.Options{
+		Identity: rt.id, Fleet: fl, DB: rt.store, Log: rt.log, Version: version,
+		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
+	}
+	newServer := func(addr string, h http.Handler) *http.Server {
+		return &http.Server{
+			Addr: addr, Handler: h,
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
+			MaxHeaderBytes:    64 << 10,
+			ErrorLog:          slog.NewLogLogger(rt.log.Handler(), slog.LevelWarn),
+		}
+	}
+
+	servers := []*http.Server{newServer(rt.cfg.HTTPAddr, httpapi.New(opts))}
+	errCh := make(chan error, 2)
 	go func() {
 		rt.log.Info("OSRIVA Panel API listening", "addr", rt.cfg.HTTPAddr, "version", version, "env", rt.cfg.Env)
-		errCh <- srv.ListenAndServe()
+		errCh <- servers[0].ListenAndServe()
 	}()
+	if rt.cfg.AgentEnabled() {
+		tlsCfg, err := fl.AgentTLSConfig()
+		if err != nil {
+			return err
+		}
+		agentSrv := newServer(rt.cfg.AgentAddr, httpapi.NewAgentHandler(opts))
+		agentSrv.TLSConfig = tlsCfg
+		servers = append(servers, agentSrv)
+		go func() {
+			rt.log.Info("agent endpoint listening (mutual TLS)", "addr", rt.cfg.AgentAddr, "public_url", rt.cfg.AgentPublicURL,
+				"ca_fingerprint", fl.CAFingerprint())
+			errCh <- agentSrv.ListenAndServeTLS("", "")
+		}()
+	} else {
+		rt.log.Warn("agent endpoint disabled: set OSRIVA_PUBLIC_URL, OSRIVA_AGENT_ADDR and OSRIVA_AGENT_PUBLIC_URL to enrol servers")
+	}
+
+	var runErr error
 	select {
 	case err := <-errCh:
 		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+			runErr = err
 		}
 	case <-ctx.Done():
 		rt.log.Info("shutting down")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			return err
+	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	for _, s := range servers {
+		if err := s.Shutdown(shutdownCtx); err != nil && runErr == nil {
+			runErr = err
 		}
 	}
-	return nil
+	return runErr
 }
 
 // seedDevOwner creates an owner in the throwaway memory store from

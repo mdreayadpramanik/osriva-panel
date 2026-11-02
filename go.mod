@@ -1,4 +1,4 @@
-module github.com/osriva/osriva-panel
+module github.com/mdreayadpramanik/osriva-panel
 
 go 1.26.0
 

@@ -10,12 +10,12 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/ratelimit"
-	"github.com/osriva/osriva-panel/services/api/internal/rbac"
-	"github.com/osriva/osriva-panel/services/api/internal/reqmeta"
-	"github.com/osriva/osriva-panel/services/api/internal/secrets"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/reqmeta"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 var (

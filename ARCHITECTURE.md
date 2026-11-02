@@ -48,8 +48,10 @@ records the current state, not aspirations; planned components are marked
 | 2 | Customer Panel | `apps/customer-panel` | planned (Phase 12) |
 | 3 | Core API | `services/api` | Phase 1 implemented |
 | 4 | Authentication service | `services/api/internal/identity`, `internal/auth` | Phase 1 implemented (in-process module of the Core API) |
-| 5 | Server Agent | `agent/` | planned (Phase 2) |
-| 6 | Universal Installer | `installer/` | planned (Phase 2) |
+| 5 | Server Agent | `agent/`, `pkg/inventory`, `pkg/agentclient` | Phase 2a implemented: enrolment, inventory, mTLS reports, renewal |
+| 6 | Universal Installer | `installer/` | planned (Phase 2b) |
+| — | Compatibility engine | `pkg/compat` | Phase 2a implemented |
+| — | Fleet service (servers, agent CA, enrolment) | `services/api/internal/fleet`, `internal/pki` | Phase 2a implemented |
 | 7–20 | Deployment, CMS, Runtime, DB, Website, SSL, Backup, Monitoring, Security, Virtualization, Provisioning, Plugins, Notifications, Webhooks | `services/*`, `adapters/*` | planned (Phases 3–13) |
 
 The Authentication Service is currently a module inside the Core API process
@@ -77,6 +79,16 @@ osriva-panel/
 │   │   └── storetest/         contract tests run against every implementation
 │   ├── internal/httpapi/      HTTP router, middleware, handlers
 │   └── openapi/openapi.yaml   OpenAPI 3.1 spec (served at /api/v1/openapi.yaml)
+│   ├── internal/fleet/        servers, agent CA lifecycle, enrolment, agent auth, reports
+│   ├── internal/pki/          internal CA: client-cert signing, listener certificate
+├── agent/
+│   ├── cmd/osriva-agent/      agent CLI: inventory, enroll, run, status
+│   └── internal/state/        persisted identity (atomic writes, 0600 key)
+├── pkg/                       code shared by the agent and the control plane
+│   ├── inventory/             host facts: Linux procfs/sysfs, Win32/registry, BSD sysctl
+│   ├── compat/                compatibility engine (6 statuses, reasons, alternatives)
+│   ├── agentproto/            wire types and paths
+│   └── agentclient/           enrolment with CA pinning, mTLS reports, renewal
 ├── migrations/                 versioned SQL migrations (embedded into the binary)
 ├── infrastructure/            Dockerfiles, Caddyfile
 ├── docs/                      ADRs, schema design, guides
@@ -84,7 +96,7 @@ osriva-panel/
 └── *.md                       ARCHITECTURE, DEVELOPMENT_STATUS, TASKS, SECURITY, COMPATIBILITY_MATRIX
 ```
 
-Directories from the master plan that do not exist yet (`agent/`, `installer/`,
+Directories from the master plan that do not exist yet (`installer/`,
 `adapters/`, `packages/*`, `apps/customer-panel`) are created in the phase that
 first puts real code in them. We do not commit empty scaffolding.
 
@@ -173,9 +185,10 @@ Panel arrive in Phase 12. The column and check constraint already exist.
 
 ## 6. Data model
 
-Implemented tables (migration `0001_core_identity.sql`): `organizations`,
-`users`, `permissions`, `roles`, `role_permissions`, `user_roles`, `sessions`,
-`audit_logs`, `settings`, plus `schema_migrations`.
+Implemented tables: `organizations`, `users`, `permissions`, `roles`,
+`role_permissions`, `user_roles`, `sessions`, `audit_logs`, `settings`
+(`0001_core_identity.sql`); `agent_ca`, `servers`, `agent_certificates`,
+`server_inventory` (`0002_servers_agents.sql`); plus `schema_migrations`.
 
 The complete planned schema for all phases, including servers, agents,
 capabilities, applications, CMS, domains, SSL, backups, monitoring, provider
@@ -199,12 +212,11 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
 
 ## 8. Planned architecture (summary)
 
-* **Agent (Phase 2):** Go binary per managed host, OS-specific adapters
-  (Linux: systemd/OpenRC + apt/dnf/zypper/pacman/apk; Windows: SCM + PowerShell;
-  BSD: rc.d + pkg). Outbound-only connection to the control plane over mutual TLS,
-  with an enrolment token exchanged for a short-lived client certificate. It
-  executes only typed, allowlisted tasks (no free-form shell) and reports results
-  with their real exit status.
+* **Agent (Phase 2a, implemented):** see [ADR-0004](docs/adr/0004-agent-enrolment-and-mtls.md).
+  The agent dials out to a dedicated mutual-TLS listener (`OSRIVA_AGENT_ADDR`),
+  separate from the reverse-proxied API because the API must verify the client
+  certificate itself. It reports inventory every 60 s and accepts **no commands**
+  yet. Typed, allowlisted tasks with real exit status arrive in Phase 3.
 * **Worker / task queue (Phase 4+):** PostgreSQL-backed job table first
   (`SELECT … FOR UPDATE SKIP LOCKED`), Redis only if needed.
 * **Adapters/plugins (Phase 13):** out-of-process plugins over gRPC/stdio with a

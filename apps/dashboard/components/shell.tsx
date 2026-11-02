@@ -12,6 +12,7 @@ type NavItem = { href: string; label: string; permission?: string };
 // Only modules with a working backend are listed. Everything else is on the Roadmap page.
 const nav: NavItem[] = [
   { href: "/", label: "Overview" },
+  { href: "/servers", label: "Servers", permission: "servers.read" },
   { href: "/users", label: "Users & Permissions", permission: "users.read" },
   { href: "/audit", label: "Audit Log", permission: "audit.read" },
   { href: "/settings", label: "Settings", permission: "settings.read" },

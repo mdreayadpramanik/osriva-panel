@@ -25,7 +25,9 @@ when a provisioning request supplies one.
 | `audit_logs` | id (identity), organization_id, actor_user_id, actor_label, action, target_type, target_id, outcome, ip, user_agent, request_id, metadata jsonb, created_at | Append-only. Retention policy job planned (Phase 8). |
 | `settings` | key (pk), value jsonb, updated_by, updated_at | e.g. `panel.mode`. |
 
-## Servers, agents, compatibility — 🗓 Phase 2
+## Servers, agents, compatibility — ✅ `0002_servers_agents.sql`
+
+Implemented as: `agent_ca` (single row, encrypted key), `servers` (status pending/active/revoked, enrolment token hash + expiry, denormalised facts, last seen), `agent_certificates` (serial, fingerprint, expiry, revocation), `server_inventory` (latest snapshot + computed capabilities as jsonb). Planned for later phases: `server_groups`, `agent_tasks`.
 
 | Table | Key columns |
 |-------|-------------|

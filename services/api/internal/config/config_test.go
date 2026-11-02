@@ -63,3 +63,35 @@ func TestLoadDevelopmentMemoryStoreAndProxies(t *testing.T) {
 		t.Fatalf("proxies = %v", got)
 	}
 }
+
+func TestAgentEndpointConfig(t *testing.T) {
+	base := map[string]string{"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey}
+	with := func(kv ...string) map[string]string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i+1 < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	c, err := Load(env(with("OSRIVA_PUBLIC_URL", "https://panel.example.com/", "OSRIVA_AGENT_ADDR", ":8443", "OSRIVA_AGENT_PUBLIC_URL", "https://panel.example.com:8443")))
+	if err != nil || !c.AgentEnabled() || c.PublicURL != "https://panel.example.com" {
+		t.Fatalf("valid agent config: %v %+v", err, c)
+	}
+	bad := []map[string]string{
+		with("OSRIVA_AGENT_ADDR", ":8443"), // missing URLs
+		with("OSRIVA_PUBLIC_URL", "https://p", "OSRIVA_AGENT_ADDR", ":8443", "OSRIVA_AGENT_PUBLIC_URL", "http://p:8443"),
+		with("OSRIVA_PUBLIC_URL", "http://panel.example.com"), // plain http in production
+	}
+	for i, m := range bad {
+		if _, err := Load(env(m)); err == nil {
+			t.Errorf("case %d: expected error", i)
+		}
+	}
+	if _, err := Load(env(map[string]string{"OSRIVA_ENV": "development", "OSRIVA_DEV_MEMORY_STORE": "true", "OSRIVA_SECRET_KEY": validKey,
+		"OSRIVA_PUBLIC_URL": "http://127.0.0.1:8080"})); err != nil {
+		t.Fatalf("http panel URL in development: %v", err)
+	}
+}

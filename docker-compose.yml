@@ -35,6 +35,10 @@ services:
       OSRIVA_SECRET_KEY: ${OSRIVA_SECRET_KEY:?set OSRIVA_SECRET_KEY in .env}
       # Caddy is the only peer allowed to set X-Forwarded-For (compose internal network).
       OSRIVA_TRUSTED_PROXIES: 172.16.0.0/12,10.0.0.0/8,192.168.0.0/16
+      # Agent enrolment: set all three in .env, or leave all empty to keep it disabled.
+      OSRIVA_PUBLIC_URL: ${OSRIVA_PUBLIC_URL:-}
+      OSRIVA_AGENT_ADDR: ${OSRIVA_AGENT_ADDR:-}
+      OSRIVA_AGENT_PUBLIC_URL: ${OSRIVA_AGENT_PUBLIC_URL:-}
     depends_on:
       postgres: { condition: service_healthy }
     networks: [internal]
@@ -47,7 +51,11 @@ services:
     environment: *api-env
     depends_on:
       migrate: { condition: service_completed_successfully }
-    networks: [internal]
+    # Agents connect to the mutual-TLS listener directly (Caddy cannot terminate it).
+    # Only port 8443 is published; the HTTP API (8080) stays reachable only via Caddy.
+    ports:
+      - "8443:8443"
+    networks: [internal, public]
     # distroless has no shell/curl; readiness is checked by Caddy upstream + `docker compose logs`.
 
   dashboard:

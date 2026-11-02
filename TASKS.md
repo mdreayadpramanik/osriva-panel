@@ -19,17 +19,27 @@
 - [ ] Admin password reset, MFA recovery codes, TOTP QR code
 - [ ] Audit log CSV export
 
-## Phase 2: Agent & installer (next)
+## Phase 2a: Agent, enrolment, inventory (done)
 
-- [ ] `agent/`: Go agent skeleton, config, service install (systemd / OpenRC / Windows SCM / rc.d)
-- [ ] Enrolment: one-time token → CSR → short-lived mTLS client cert issued by an OSRIVA CA
-- [ ] Agent ↔ control-plane protocol: outbound WebSocket over mTLS, typed allowlisted tasks, results with real exit codes
-- [ ] OS/hardware discovery adapters: Linux (`/etc/os-release`, `/proc`, sysfs), Windows (WMI/CIM), BSD (`sysctl`)
-- [ ] Compatibility engine with the 6 statuses + reasons + alternatives
-- [ ] Migration `0002_servers_agents.sql` (servers, agents, enrolment tokens, OS, capabilities, agent_tasks)
-- [ ] Dashboard: Servers list, "Add server" flow (shows the enrolment command), server detail with detected capabilities
-- [ ] `installer/`: POSIX sh bootstrap + Go installer; detect → plan → explicit approval → install → verify; upgrade (with `pg_dump`), repair, rollback, uninstall, backup-config
-- [ ] Signed release artifacts + checksums (cosign / minisign)
+- [x] `agent/` CLI: inventory, enroll, run, status; atomic credential storage
+- [x] Enrolment: one-time token → CSR → 30-day mTLS client cert from the internal CA; CA pinned before the token is sent
+- [x] Agent ↔ control plane: HTTPS over mutual TLS, reports every 60 s, renewal, revocation (ADR-0004)
+- [x] Inventory: Linux procfs/sysfs, Windows Win32/registry (verified on Windows 11), BSD sysctl (compiles only)
+- [x] Compatibility engine with the 6 statuses, reasons and alternatives
+- [x] Migration `0002_servers_agents.sql` + store contract tests
+- [x] Dashboard: Servers list, Add-server flow, server detail with capabilities
+- [~] Linux inventory on a real host (runs in CI on Ubuntu after the next push; add `linux/amd64` to `compat.testedPlatforms` once green)
+- [ ] BSD inventory verified on real FreeBSD/OpenBSD/NetBSD; OpenBSD/NetBSD disk inventory
+- [ ] Delete server (pending/revoked)
+
+## Phase 2b: Installer & agent service (next)
+
+- [ ] Agent service install: systemd unit, OpenRC script, Windows service (SCM), rc.d; dedicated config dir with restrictive ACLs
+- [ ] `installer/`: POSIX sh bootstrap + Go installer; detect → plan → explicit approval → install → verify
+- [ ] Installer commands: install, upgrade (with `pg_dump`), repair, rollback, uninstall, backup-config, verify
+- [ ] One-line agent install shown in the Add-server dialog (downloads a signed binary)
+- [ ] Signed release artifacts + checksums (cosign / minisign), GitHub release workflow
+- [ ] Verify the Docker Compose stack end-to-end on a Linux VPS
 
 ## Phases 3–14 (summary; expanded when each phase starts)
 

@@ -8,9 +8,11 @@ websites, CMSs, applications and hosting infrastructure from the browser. It has
 operating modes, **Personal Server Mode** and **Hosting Provider Mode**, plus a separate
 **Customer Panel**. It has no paid editions, no license keys and no billing.
 
-> **Status: early development (Phase 1 of 14).** What works today: authentication,
-> sessions, TOTP two-factor, role-based access control, user management, the audit log and
-> panel settings. Server management, deployment, CMS, Docker, backups, monitoring and
+> **Status: early development (Phase 2a of 14).** What works today: authentication,
+> sessions, TOTP two-factor, role-based access control, user management, the audit log,
+> panel settings, and **connecting servers**: the OSRIVA Agent enrols securely and reports
+> each server's real OS, hardware, storage and network, plus a compatibility assessment.
+> Managing servers (services, files, deployment, CMS, Docker, backups, monitoring) and
 > provider features **do not exist yet**. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
 > OSRIVA Panel is **not production-ready**.
 
@@ -92,6 +94,35 @@ npm run typecheck
 
 The PostgreSQL integration tests run only when `OSRIVA_TEST_DATABASE_URL` is set, and they
 **drop and recreate the `public` schema** of that database. Point it only at a throwaway database.
+
+## Connecting a server (OSRIVA Agent)
+
+1. Start the API with the agent endpoint configured: `OSRIVA_PUBLIC_URL`,
+   `OSRIVA_AGENT_ADDR` and `OSRIVA_AGENT_PUBLIC_URL` (see `.env.example`). For local
+   development, `http://127.0.0.1:8080`, `127.0.0.1:8443` and `https://127.0.0.1:8443` work.
+2. Build the agent for the target machine, for example:
+
+   ```bash
+   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o osriva-agent ./agent/cmd/osriva-agent
+   ```
+
+   `make agents` builds every supported platform into `dist/`.
+3. In the dashboard: **Servers → Add server**. Copy the one-time command and run it on
+   the server as root / Administrator, then start reporting:
+
+   ```bash
+   osriva-agent run
+   ```
+
+Check what the agent would report without any network access:
+
+```bash
+osriva-agent inventory --capabilities
+```
+
+The agent must be able to reach the agent port directly. Open it in your firewall
+yourself; OSRIVA does not change firewall rules. Running it as a system service,
+and a one-line installer, arrive in Phase 2b.
 
 ## Production (single server, Docker Compose)
 

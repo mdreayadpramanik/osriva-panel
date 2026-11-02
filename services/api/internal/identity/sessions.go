@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/osriva/osriva-panel/services/api/internal/auth"
-	"github.com/osriva/osriva-panel/services/api/internal/reqmeta"
-	"github.com/osriva/osriva-panel/services/api/internal/store"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/reqmeta"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
 type LoginInput struct {
