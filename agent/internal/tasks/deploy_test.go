@@ -391,3 +391,26 @@ func TestGitFetchDumbHTTP(t *testing.T) {
 		t.Fatal("unknown branch must fail")
 	}
 }
+
+// The agent runs with umask 0077: images must still be readable by non-root
+// users inside the container (found by the Ubuntu system test: nginx 403).
+func TestContextPermissionsNormalised(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "site", "index.html"), "x")
+	_ = os.Chmod(filepath.Join(dir, "site", "index.html"), 0o600)
+	_ = os.Chmod(filepath.Join(dir, "site"), 0o700)
+	pr, pw := io.Pipe()
+	go func() { pw.CloseWithError(writeContext(pw, dir)) }()
+	tr := tar.NewReader(pr)
+	modes := map[string]int64{}
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			break
+		}
+		modes[h.Name] = h.Mode
+	}
+	if modes["site/"] != 0o755 || modes["site/index.html"] != 0o644 {
+		t.Fatalf("modes: %v", modes)
+	}
+}

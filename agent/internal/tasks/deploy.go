@@ -281,6 +281,16 @@ func writeContext(w io.Writer, dir string) error {
 			return err
 		}
 		hdr.Name, hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = rel, 0, 0, "", ""
+		// The agent runs with umask 0077; images must still be readable by non-root
+		// users (nginx workers, USER node), so normalise permissions.
+		switch {
+		case info.IsDir():
+			hdr.Mode = 0o755
+		case info.Mode().IsRegular() && info.Mode()&0o111 != 0:
+			hdr.Mode = 0o755
+		case info.Mode().IsRegular():
+			hdr.Mode = 0o644
+		}
 		if info.IsDir() {
 			hdr.Name += "/"
 		}
