@@ -5,6 +5,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY migrations ./migrations
+COPY pkg ./pkg
 COPY services ./services
 ARG VERSION=0.1.0-dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/osriva-api ./services/api/cmd/osriva-api
