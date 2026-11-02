@@ -1,10 +1,35 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **4 (Docker, deployments) done** · Next: **Phase 5 (websites, reverse proxy, SSL, DNS)**
+Last updated: **2026-11-03** · Current phase: **5a (reverse proxy, websites, SSL) done** · Next: **Phase 5b (DNS provider adapters) or Phase 6 (CMS)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, and deploy apps from Git with history and rollback.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, and serve them on domains through a managed Caddy proxy with automatic HTTPS.
+
+## Phase 5a report (reverse proxy, websites, SSL)
+
+Design: [ADR-0008](docs/adr/0008-reverse-proxy.md). Evidence: `System tests` run 41510772108 (commit `64e0486`,
+2026-11-03, both jobs passed): real Caddy started by the agent on Ubuntu 24.04, next to the OSRIVA control plane.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| `proxy.apply` / `proxy.status` / `proxy.disable`: Caddy `2.8.4-alpine` container, host network, capabilities dropped, state in a 0700 root-only directory | fake-Engine unit tests; Ubuntu CI: container settings and directory mode checked |
+| Admin API only on a Unix socket (never TCP) | Ubuntu CI: `127.0.0.1:2019` unreachable |
+| Busy web ports refused without touching them | unit tests; Ubuntu CI: HTTPS port 443 (held by the control plane) refused, panel still reachable |
+| Sites: domain → local port; internal CA, HTTP only, Let's Encrypt; HTTP→HTTPS redirect | Ubuntu CI: `https://ci.localhost` served nginx through the proxy, HTTP returned 308, plain HTTP site served |
+| Live reload through the admin API; a rejected config keeps the old one | unit tests; Ubuntu CI: adding and removing sites while running |
+| Certificate status (issuer, expiry) from Caddy's storage | unit test with a generated certificate; Ubuntu CI: internal certificate for `ci.localhost` listed |
+| DNS hint per domain (resolves / points here / elsewhere) | e2e test; browser with a real agent on Windows 11 (github.com shown as pointing elsewhere) |
+| Domains unique across servers, strict validation (no wildcards, IPs, injection), re-auth for all changes | unit + e2e tests |
+| Dashboard Websites tab (proxy settings, sites, certificates, DNS) | `tsc`; browser with a real agent on Windows 11 |
+
+### Not tested / limitations
+
+* **Let's Encrypt issuance was not exercised** (needs a public domain and ports 80/443 reachable from the internet). Status: NOT_TESTED.
+* On the server that runs the control plane, ports 80/443 are taken by the panel's own Caddy: the proxy must use other ports there (then only internal-CA or HTTP-only sites work).
+* No DNS provider adapters, no wildcard or DNS-01 certificates, no custom directives, redirects or auth (Phase 5b and later).
 
 ## Phase 4b report (deployments)
 
@@ -225,5 +250,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 3b-2 | Users / groups (view), SSH keys, scheduled tasks (view), hostname / timezone | ✅ Done |
 | 4a | Docker manager (containers, images, volumes, networks) | ✅ Done |
 | 4b | Git deployments (Dockerfile, static, Node.js), history, rollback | ✅ Done (ZIP, Compose, private repos deferred) |
-| 5 | Websites, reverse proxy, SSL, DNS | ⏭ Next |
+| 5a | Reverse proxy (Caddy), websites, automatic HTTPS, certificate status, DNS hint | ✅ Done (Let's Encrypt NOT_TESTED) |
+| 5b | DNS provider adapters | ⏭ Next (needs provider credentials) |
 | 6–14 | See [TASKS.md](TASKS.md) | Not started |

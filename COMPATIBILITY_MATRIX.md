@@ -101,6 +101,17 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Git over HTTPS (GitHub, GitLab …) | NOT_TESTED | CI used a loopback dumb-HTTP server; smart HTTPS uses the same `git clone` |
 | Windows | UNSUPPORTED | No Docker support on Windows yet |
 
+## Reverse proxy and websites (Phase 5a)
+
+"System tests run 41510772108" is the `System tests` workflow at commit `64e0486` (2026-11-03).
+
+| Platform / feature | Status | Evidence / notes |
+|--------------------|--------|------------------|
+| Ubuntu 24.04 + Docker Engine: Caddy proxy, internal-CA and HTTP-only sites, reload, disable | SUPPORTED | System tests run 41510772108 |
+| Let's Encrypt (HTTP-01 / TLS-ALPN-01) | NOT_TESTED | Needs a public domain; Caddy handles it, OSRIVA only configures it |
+| Control-plane host (80/443 already used) | PARTIALLY_SUPPORTED | Proxy works on other ports; public ACME needs 80/443 |
+| Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).

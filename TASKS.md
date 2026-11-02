@@ -81,6 +81,15 @@
 - [ ] Private repositories (deploy keys / tokens); live build logs; zero-downtime releases; HTTP health checks
 - [ ] More runtimes (Python, PHP, Go) without a Dockerfile
 
+## Phase 5a: Reverse proxy and websites (done)
+
+- [x] Caddy proxy managed by the agent, admin API on a root-only Unix socket (CI run 41510772108)
+- [x] Websites (domain → local port), internal CA / HTTP only, HTTP→HTTPS redirect, live reload, certificate status (CI run 41510772108)
+- [~] Let's Encrypt issuance (configured, never run against a public domain)
+- [ ] DNS provider adapters (Cloudflare first), DNS-01 and wildcard certificates (Phase 5b)
+- [ ] Sharing 80/443 with the control-plane Caddy on single-server installs
+- [ ] Redirects, basic auth, static sites, per-site access logs
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters
