@@ -33,14 +33,26 @@
 - [ ] BSD inventory verified on real FreeBSD/OpenBSD/NetBSD; OpenBSD/NetBSD disk inventory
 - [ ] Delete server (pending/revoked)
 
-## Phase 2b: Installer & agent service (next)
+## Phase 2b: Installer & agent service (done)
 
-- [ ] Agent service install: systemd unit, OpenRC script, Windows service (SCM), rc.d; dedicated config dir with restrictive ACLs
-- [ ] `installer/`: POSIX sh bootstrap + Go installer; detect → plan → explicit approval → install → verify
-- [ ] Installer commands: install, upgrade (with `pg_dump`), repair, rollback, uninstall, backup-config, verify
-- [ ] One-line agent install shown in the Add-server dialog (downloads a signed binary)
-- [ ] Signed release artifacts + checksums (cosign / minisign), GitHub release workflow
-- [ ] Verify the Docker Compose stack end-to-end on a Linux VPS
+- [x] Agent service: systemd (Ubuntu, CI) and Windows SCM (Server 2022, CI); restrictive config dir (0700 / protected DACL)
+- [~] OpenRC and FreeBSD rc.d services (generated and unit-tested, never run)
+- [x] `installer/osriva-install.sh`: plan → approval → install → verify (Ubuntu 24.04, CI)
+- [x] Installer commands: install, upgrade (verified `pg_dump`, auto-rollback), repair, rollback, backup, verify, uninstall [--purge]
+- [x] Panel serves agent builds + SHA-256 and the install.sh / install.ps1 one-liners shown in the Add-server dialog
+- [x] Docker Compose stack verified end to end (Ubuntu 24.04 CI runner)
+- [ ] Installer on Debian, RHEL family, SUSE; `--install-docker` beyond Ubuntu
+- [ ] Let's Encrypt with a real domain on a long-lived VPS
+- [ ] Signed release artifacts + checksums (cosign / minisign), GitHub release workflow, published container images
+- [ ] Agent self-update from the panel
+
+## Phase 3: Server management (next)
+
+- [ ] Typed, allowlisted agent tasks over the mTLS channel (control plane → agent), with audit and real exit codes
+- [ ] Live metrics: CPU %, memory, disk I/O, network throughput, load; retention
+- [ ] Service management (list/start/stop/restart) via systemd, OpenRC, Windows SCM, rc.d
+- [ ] Process list, system logs (journald / Event Log), users and groups, SSH keys, cron, hostname and timezone (dangerous ops behind re-auth)
+- [ ] File manager with path confinement, upload/download, permission editing
 
 ## Phases 3–14 (summary; expanded when each phase starts)
 

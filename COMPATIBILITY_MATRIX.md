@@ -5,38 +5,40 @@ Statuses: `SUPPORTED` (implemented **and** tested) · `PARTIALLY_SUPPORTED` ·
 `DEPENDENCY_MISSING` · `REQUIRES_CONFIGURATION`.
 
 A row moves to `SUPPORTED` only with a test run recorded in the "Evidence" column.
-Last updated: 2026-11-02 (Phase 1).
+"System tests run 41463687791" is the `System tests` workflow at commit `bd4052d`
+(2026-11-02) on disposable GitHub Actions machines.
+Last updated: 2026-11-02 (Phase 2b).
 
-## Control plane (Core API + dashboard)
-
-| Platform | Status | Evidence / notes |
-|----------|--------|------------------|
-| Windows 11 x86_64, Go 1.27.3, Node 24, in-memory store | PARTIALLY_SUPPORTED | Development only: unit + HTTP tests pass, dashboard built and exercised in a browser (2026-11-02). Not a production target. |
-| Linux x86_64 (Ubuntu runner), Go 1.26, PostgreSQL 17 | PARTIALLY_SUPPORTED | GitHub Actions CI passed on 2026-11-02 (latest `0674191`): gofmt, vet, `go test -race` including the PostgreSQL contract tests for identity, servers and agents. Not yet run as a long-lived deployment. |
-| Docker images (API, dashboard) | PARTIALLY_SUPPORTED | Both images built in CI (latest `0674191`). Containers not yet started. |
-| Docker Compose stack | NOT_TESTED | `docker compose up` has never been run. |
-| Linux ARM64 | NOT_TESTED | Static Go binary should cross-compile. Unverified. |
-| PostgreSQL 17 | SUPPORTED | Store contract suite and migration idempotency test passed in CI on 2026-11-02. |
-| PostgreSQL 16 | NOT_TESTED | Schema uses only PG ≥ 13 features. Not run in CI. |
-
-## Managed servers: OSRIVA Agent (Phase 2a)
-
-What the agent can do today: enrol, report inventory, renew its certificate.
-It cannot manage anything yet (Phase 3+). The status below is for **inventory
-and enrolment only**.
+## Control plane (installer, Core API, dashboard)
 
 | Platform | Status | Evidence / notes |
 |----------|--------|------------------|
-| Windows 11 x86_64 | SUPPORTED | Real agent enrolled, reported and was revoked on Windows 11 Pro 25H2 (2026-11-02). |
-| Windows Server | NOT_TESTED | Same Win32/registry code paths as Windows 11; not run on Server yet. |
-| Windows ARM64 | NOT_TESTED | Compiles. |
-| Linux x86_64, Ubuntu | SUPPORTED | CI on the GitHub Actions Ubuntu runner passed (2026-11-02, `0674191`): `osriva-agent inventory` checked with jq, plus the full enrol → mTLS report → renew → revoke tests. Not yet run on a long-lived VPS. |
-| Linux x86_64, other distributions (Debian, RHEL family, SUSE, Arch …) | NOT_TESTED | Same procfs/sysfs code paths; os-release parsing unit-tested. Never run on these distributions. |
-| Linux ARM64 / ARMv7 | NOT_TESTED | Compiles. |
-| FreeBSD | NOT_TESTED | sysctl + getfsstat collector compiles; never run. |
-| OpenBSD, NetBSD | PARTIALLY_SUPPORTED (expected) | Compiles; disk inventory not implemented (reported as a warning). Never run. |
-| illumos, macOS | UNSUPPORTED | Only portable facts (hostname, arch, NICs) are collected. |
-| Immutable OSes (Fedora CoreOS, Flatcar, Talos …) | PARTIALLY_SUPPORTED (expected) | Detected and flagged by the compatibility engine. A conventional agent install may be impossible. Assessed individually. |
+| Ubuntu 24.04 x86_64, installer + Docker Compose (PostgreSQL 17, API, dashboard, Caddy) | SUPPORTED | System tests run 41463687791: plan, install, verify, backup, upgrade, rollback, repair, uninstall --purge. Short-lived machine with `localhost` (Caddy local CA). |
+| Other Linux distributions with Docker Compose v2 (Debian, RHEL family, SUSE …) | NOT_TESTED | The installer only needs bash, Docker Compose v2 and coreutils; never run on them. `--install-docker` is Ubuntu-only. |
+| Linux ARM64 control plane | NOT_TESTED | Images are multi-arch capable; never built on ARM64. |
+| Public domain with Let's Encrypt | NOT_TESTED | Caddy handles ACME; not exercised (CI uses `localhost`). |
+| Windows / macOS / BSD as control plane | UNSUPPORTED | The installer refuses non-Linux hosts. Development on Windows works with the in-memory store (see README). |
+| PostgreSQL 17 | SUPPORTED | Store contract and migration tests in CI; used by the system test. |
+| PostgreSQL 16 | NOT_TESTED | Schema uses only PG ≥ 13 features. |
+
+## Managed servers: OSRIVA Agent
+
+What the agent can do today: enrol, run as a service, report inventory, renew its
+certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
+
+| Platform | Inventory + enrolment | Service | Evidence / notes |
+|----------|----------------------|---------|------------------|
+| Windows 11 x86_64 | SUPPORTED | NOT_TESTED | Real agent on Windows 11 Pro 25H2 (2026-11-02), run in the foreground. |
+| Windows Server 2022 x86_64 | SUPPORTED | SUPPORTED | System tests run 41463687791: `install.ps1` one-liner, Windows service as LocalSystem, protected DACL, revoke stops it, uninstall. |
+| Windows ARM64 | NOT_TESTED | NOT_TESTED | Compiles. |
+| Ubuntu 24.04 x86_64 | SUPPORTED | SUPPORTED (systemd) | System tests run 41463687791: `install.sh` one-liner, systemd unit, 0700 config dir, revoke → exit 3 without restart. |
+| Other Linux x86_64 with systemd (Debian, RHEL family, SUSE, Arch …) | NOT_TESTED | NOT_TESTED | Same procfs/sysfs and systemd code paths. |
+| Linux with OpenRC (Alpine, Gentoo …) | NOT_TESTED | NOT_TESTED | OpenRC script generated and unit-tested; never run. |
+| Linux ARM64 / ARMv7 | NOT_TESTED | NOT_TESTED | Compiles; builds served by the panel. |
+| FreeBSD | NOT_TESTED | NOT_TESTED | sysctl/getfsstat collector and rc.d script compile; never run. |
+| OpenBSD, NetBSD | PARTIALLY_SUPPORTED (expected) | UNSUPPORTED | Compiles; no disk inventory; no service adapter (run `osriva-agent run` under your own supervisor). |
+| illumos, macOS | UNSUPPORTED | UNSUPPORTED | Only portable facts are collected; no agent builds are served. |
+| Immutable OSes (Fedora CoreOS, Flatcar, Talos …) | PARTIALLY_SUPPORTED (expected) | NOT_TESTED | Detected and flagged by the compatibility engine. A conventional agent install may be impossible. |
 
 ## Runtimes, frameworks, CMS, databases, virtualization
 

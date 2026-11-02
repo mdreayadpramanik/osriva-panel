@@ -565,3 +565,45 @@ paths:
         "200": { description: "`{server_id, server_name, certificate_pem, ca_pem, agent_endpoint}`" }
         "401": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /agent/downloads:
+    get:
+      tags: [agent]
+      summary: Agent builds served by this panel, with SHA-256 checksums
+      security: []
+      responses:
+        "200": { description: "`{builds: [{os, arch, size, sha256, url}]}`" }
+  /agent/download/{os}/{arch}:
+    get:
+      tags: [agent]
+      summary: Download an agent binary
+      security: []
+      parameters:
+        - { name: os, in: path, required: true, schema: { type: string, enum: [linux, windows, freebsd, openbsd, netbsd] } }
+        - { name: arch, in: path, required: true, schema: { type: string, enum: [amd64, arm64, arm] } }
+      responses:
+        "200": { description: Binary (`X-Checksum-SHA256` header) }
+        "404": { $ref: "#/components/responses/Error" }
+  /agent/download/{os}/{arch}/sha256:
+    get:
+      tags: [agent]
+      summary: SHA-256 of an agent binary (plain text)
+      security: []
+      parameters:
+        - { name: os, in: path, required: true, schema: { type: string } }
+        - { name: arch, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Hex digest }
+  /agent/install.sh:
+    get:
+      tags: [agent]
+      summary: One-line installer for Linux/BSD (download, verify, enrol, install the service)
+      security: []
+      responses:
+        "200": { description: POSIX shell script }
+  /agent/install.ps1:
+    get:
+      tags: [agent]
+      summary: One-line installer for Windows (download, verify, enrol, install the Windows service)
+      security: []
+      responses:
+        "200": { description: PowerShell script }

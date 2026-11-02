@@ -49,7 +49,7 @@ records the current state, not aspirations; planned components are marked
 | 3 | Core API | `services/api` | Phase 1 implemented |
 | 4 | Authentication service | `services/api/internal/identity`, `internal/auth` | Phase 1 implemented (in-process module of the Core API) |
 | 5 | Server Agent | `agent/`, `pkg/inventory`, `pkg/agentclient` | Phase 2a implemented: enrolment, inventory, mTLS reports, renewal |
-| 6 | Universal Installer | `installer/` | planned (Phase 2b) |
+| 6 | Universal Installer | `installer/osriva-install.sh`, agent `install.sh` / `install.ps1` | Phase 2b implemented (control plane: Linux + Docker Compose; agent: Linux/BSD/Windows one-liners) |
 | — | Compatibility engine | `pkg/compat` | Phase 2a implemented |
 | — | Fleet service (servers, agent CA, enrolment) | `services/api/internal/fleet`, `internal/pki` | Phase 2a implemented |
 | 7–20 | Deployment, CMS, Runtime, DB, Website, SSL, Backup, Monitoring, Security, Virtualization, Provisioning, Plugins, Notifications, Webhooks | `services/*`, `adapters/*` | planned (Phases 3–13) |
@@ -96,7 +96,7 @@ osriva-panel/
 └── *.md                       ARCHITECTURE, DEVELOPMENT_STATUS, TASKS, SECURITY, COMPATIBILITY_MATRIX
 ```
 
-Directories from the master plan that do not exist yet (`installer/`,
+Directories from the master plan that do not exist yet (
 `adapters/`, `packages/*`, `apps/customer-panel`) are created in the phase that
 first puts real code in them. We do not commit empty scaffolding.
 

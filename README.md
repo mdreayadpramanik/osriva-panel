@@ -8,9 +8,10 @@ websites, CMSs, applications and hosting infrastructure from the browser. It has
 operating modes, **Personal Server Mode** and **Hosting Provider Mode**, plus a separate
 **Customer Panel**. It has no paid editions, no license keys and no billing.
 
-> **Status: early development (Phase 2a of 14).** What works today: authentication,
+> **Status: early development (Phase 2 of 14 done).** What works today: authentication,
 > sessions, TOTP two-factor, role-based access control, user management, the audit log,
-> panel settings, and **connecting servers**: the OSRIVA Agent enrols securely and reports
+> panel settings, a **Linux installer** (with upgrade and rollback), and **connecting servers**:
+> a one-line command installs the OSRIVA Agent as a service; it enrols securely and reports
 > each server's real OS, hardware, storage and network, plus a compatibility assessment.
 > Managing servers (services, files, deployment, CMS, Docker, backups, monitoring) and
 > provider features **do not exist yet**. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
@@ -95,60 +96,73 @@ npm run typecheck
 The PostgreSQL integration tests run only when `OSRIVA_TEST_DATABASE_URL` is set, and they
 **drop and recreate the `public` schema** of that database. Point it only at a throwaway database.
 
+## Installing the control plane on a Linux server
+
+The installer runs from a checkout of this repository and deploys PostgreSQL, the API,
+the dashboard and Caddy with Docker Compose. It needs Docker Engine with the Compose v2
+plugin (on Ubuntu it can install them from Ubuntu's own packages with `--install-docker`).
+
+See what it would do first. `plan` changes nothing:
+
+```bash
+sudo ./installer/osriva-install.sh plan --domain panel.example.com --agent
+```
+
+Install (asks for confirmation, then prints the owner's generated password once):
+
+```bash
+sudo ./installer/osriva-install.sh install --domain panel.example.com --agent --admin-email you@example.com
+```
+
+Day-two operations:
+
+```bash
+sudo ./installer/osriva-install.sh verify
+```
+
+```bash
+sudo ./installer/osriva-install.sh upgrade --source /path/to/newer/checkout
+```
+
+`upgrade` takes a verified database backup first and rolls back automatically if the new
+release fails its checks. `backup`, `rollback`, `repair` and `uninstall [--purge]` are also
+available (`--help`). Configuration and the secret key live in `/etc/osriva/osriva.env`
+(mode 0600). Back it up.
+
+The installer never changes firewall, SSH, disk or network settings. Open 80/tcp and
+443/tcp (and 8443/tcp with `--agent`) yourself. For a real domain, Caddy obtains a
+Let's Encrypt certificate automatically. `localhost` uses Caddy's local CA.
+
 ## Connecting a server (OSRIVA Agent)
 
-1. Start the API with the agent endpoint configured: `OSRIVA_PUBLIC_URL`,
-   `OSRIVA_AGENT_ADDR` and `OSRIVA_AGENT_PUBLIC_URL` (see `.env.example`). For local
-   development, `http://127.0.0.1:8080`, `127.0.0.1:8443` and `https://127.0.0.1:8443` work.
-2. Build the agent for the target machine, for example:
+1. The control plane needs the agent endpoint enabled (`--agent` in the installer, or
+   `OSRIVA_PUBLIC_URL`, `OSRIVA_AGENT_ADDR` and `OSRIVA_AGENT_PUBLIC_URL`; see `.env.example`).
+2. In the dashboard: **Servers → Add server**. Copy the one-line command for the server's
+   OS and run it there:
+   * **Linux / BSD** (with sudo): downloads the agent from your panel, checks its SHA-256,
+     enrols, and installs a systemd / OpenRC / rc.d service.
+   * **Windows** (elevated PowerShell): the same, as a Windows service.
+3. The server shows as online within a minute.
 
-   ```bash
-   GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o osriva-agent ./agent/cmd/osriva-agent
-   ```
+The agent first checks that the panel's CA matches the fingerprint in the command, and
+only then sends the one-time token. It reports inventory every 60 s and does not accept
+commands yet (Phase 3). Without the one-liner:
 
-   `make agents` builds every supported platform into `dist/`.
-3. In the dashboard: **Servers → Add server**. Copy the one-time command and run it on
-   the server as root / Administrator, then start reporting:
+```bash
+osriva-agent enroll --panel-url https://panel.example.com --token TOKEN --ca-fingerprint sha256:...
+```
 
-   ```bash
-   osriva-agent run
-   ```
+```bash
+sudo osriva-agent service install
+```
 
-Check what the agent would report without any network access:
+Check what the agent would report, without any network access:
 
 ```bash
 osriva-agent inventory --capabilities
 ```
 
-The agent must be able to reach the agent port directly. Open it in your firewall
-yourself; OSRIVA does not change firewall rules. Running it as a system service,
-and a one-line installer, arrive in Phase 2b.
-
-## Production (single server, Docker Compose)
-
-```bash
-cp .env.example .env
-```
-
-Set `OSRIVA_SECRET_KEY`, `POSTGRES_PASSWORD` and `OSRIVA_DOMAIN`, then:
-
-```bash
-docker compose up -d --build
-```
-
-```bash
-docker compose run --rm api admin create --email you@example.com
-```
-
-Only Caddy publishes ports (80/443), and it obtains TLS certificates automatically for a
-real domain. PostgreSQL and the API are on an internal network. Open ports 80 and 443 in
-your firewall yourself. OSRIVA never changes firewall rules on its own.
-
-> The Compose stack is not yet verified end-to-end (no Docker environment was available
-> during Phase 1). CI builds both images.
-
-The Universal Installer (`curl … | sh`-style, with OS detection, an installation plan and
-rollback) is Phase 2 work and does not exist yet.
+Agents connect directly to the agent port (8443). Open it in your firewall yourself.
 
 ## License
 

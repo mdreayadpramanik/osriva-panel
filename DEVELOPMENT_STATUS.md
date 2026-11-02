@@ -1,54 +1,50 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-02** · Current phase: **2a (agent, enrolment, inventory, compatibility) done** · Next: **Phase 2b (installer)**
+Last updated: **2026-11-02** · Current phase: **2 (agent & installer) done** · Next: **Phase 3 (server management)**
 
-**OSRIVA Panel is not production-ready.** It can now enrol servers and show what
-their agents report. It cannot change anything on a server yet.
+**OSRIVA Panel is not production-ready.** It can be installed, can enrol servers and
+shows what their agents report. It cannot change anything on a server yet.
 
-## Phase 2a report
+## Phase 2b report (installer, agent service, one-line installers)
 
-### Implemented and tested
+### Implemented and tested on real systems
 
-| Feature | Tests / evidence |
-|---------|------------------|
-| Internal agent CA (ECDSA P-256), key encrypted at rest, created on first start, concurrency-safe | `pki` tests; created on a real start |
-| One-time enrolment tokens (hashed, 1 h, single use, atomic consumption, rotation) | `storetest` + e2e |
-| CA pinning: agent verifies the CA fingerprint **before** sending the token | e2e test + real agent on this PC |
-| Mutual-TLS agent listener (TLS 1.3, client cert required, per-request revocation/expiry/status check) | e2e tests incl. no-cert and rogue-CA rejection |
-| Certificate renewal (30-day certs, renew at 1/3 lifetime, new key each time) | e2e test |
-| Server revocation (all certs revoked, agent locked out immediately; re-auth required) | e2e test + real agent |
-| Inventory: OS, kernel, arch, CPU, memory, disks, NICs, uptime, privileges, init system, package managers, tools, virtualization, immutability | Linux parsers with fixtures; `Collect()` run on real Windows 11 |
-| Compatibility engine (6 statuses, reasons, alternatives; never SUPPORTED for unbuilt modules) | `compat` tests |
-| Agent CLI: `inventory`, `enroll`, `run` (backoff, renewal), `status`; atomic credential writes | `state` tests + real run |
-| Servers API (`/servers`, detail, token regeneration, revoke) + OpenAPI | e2e + browser |
-| Dashboard: Servers list (online/offline/pending/revoked), Add-server flow with one-time command, server detail (system, hardware, network, storage, compatibility), overview counts | `tsc` + `next build`; detail page checked in a browser with the real agent's data |
-| Store contract extended (CA, servers, enrolment, certificates, reports) | memstore locally; PostgreSQL 17 in CI, passed (`0674191`) |
+All evidence comes from the `System tests` workflow on disposable GitHub Actions machines
+(run 41463687791, commit `bd4052d`, 2026-11-02, both jobs passed).
 
-**Real end-to-end run (2026-11-02, this Windows 11 PC):** an actual `osriva-agent.exe`
-was enrolled through the panel, reported over mutual TLS, and the dashboard showed
-this PC's real hardware. A wrong fingerprint was refused before the token was
-sent, the replayed token was rejected, and after revocation the agent got 403.
-
-Builds: the agent compiles for linux/amd64, linux/arm64, windows/amd64, windows/arm64,
-freebsd, openbsd and netbsd (checked locally; CI also runs the Linux inventory on Ubuntu).
+| Feature | Evidence |
+|---------|----------|
+| Control-plane installer `plan`: detects OS, arch, RAM, disk, Docker/Compose, busy ports; **changes nothing** | Ubuntu 24.04: `/opt/osriva` absent after `plan` |
+| `install`: plan → confirmation → secrets in `/etc/osriva/osriva.env` (0600) → release under `/opt/osriva` → Compose build/start → owner account → health checks | Ubuntu 24.04 |
+| Full Docker Compose stack (PostgreSQL, migrate, API with agent listener, dashboard, Caddy with HTTPS) | Ubuntu 24.04, all checks green |
+| Agent downloads from the panel (9 platforms, SHA-256) + `install.sh` one-liner: download, checksum, enrol, systemd service | Ubuntu 24.04: server online in the panel, `/etc/osriva-agent` is 0700 |
+| `backup` (verified `pg_dump` + config), `upgrade` (new release, data kept), `rollback` (previous release + DB restore), `repair`, `verify` | Ubuntu 24.04: agent online again after each |
+| Revocation stops the agent permanently (exit 3, systemd `RestartPreventExitStatus`) | Ubuntu 24.04: `ExecMainStatus=3`, not restarted |
+| `uninstall --purge` removes containers, `/opt/osriva`, `/etc/osriva`; `service uninstall` removes the unit | Ubuntu 24.04 |
+| Windows: `install.ps1` one-liner → Windows service (automatic start, recovery actions), LocalSystem, elevated inventory | Windows Server 2022 |
+| Windows credential directory: protected DACL with only SYSTEM and Administrators | Windows Server 2022 |
+| Windows: revocation stops the service; `service uninstall` deletes it | Windows Server 2022 |
+| Unit tests: service definitions (systemd/OpenRC/rc.d quoting), dist scanning (no path traversal), script quoting, download routes | `go test` |
 
 ### Partially implemented / untested
 
-* **Linux:** verified on the Ubuntu CI runner (inventory plus the full enrol/report/renew/revoke
-  tests, `0674191`). Not yet run on a long-lived VPS or on other distributions.
-* **BSD inventory:** compiles, never run. Disk inventory on OpenBSD/NetBSD is not
-  implemented and reported as a warning.
-* **No agent service:** `osriva-agent run` must be started by hand. Service
-  installation (systemd/OpenRC/Windows SCM/rc.d) is Phase 2b.
-* **Compose:** the agent port (8443) is wired up but the stack has never been started.
-* **Phase 1 caveats still apply:** UI dialogs not clicked through, mobile layout not checked.
+* **OpenRC and FreeBSD rc.d services:** generated and unit-tested, never run on a real host.
+* **Installer on other distributions:** written for any Linux with Docker Compose v2, but
+  only tested on Ubuntu 24.04. `--install-docker` works only on Ubuntu (and was not
+  exercised, because the CI runner already has Docker).
+* **Real domains / Let's Encrypt:** CI used `localhost` with Caddy's local CA. Public ACME
+  issuance has not been exercised.
+* **Long-lived operation:** every test machine was disposable and short-lived.
+* **Agent binaries are not signed.** The checksum detects corruption; authenticity rests on
+  the panel's HTTPS plus the CA fingerprint pin used for enrolment.
+* Phase 1 caveats remain: dashboard dialogs not clicked through in a browser, mobile layout unchecked.
 
 ### Missing
 
-* Universal installer (detect → plan → approve → install → verify; upgrade/repair/rollback/uninstall).
-* Signed agent releases and checksums.
-* Live metrics (CPU %, network throughput) arrive in Phase 3. Phase 2 reports a snapshot every 60 s.
-* Deleting servers (only revoke exists).
+* Signed release artifacts (cosign/minisign) and published container images. Installing
+  requires a source checkout while the repository is private.
+* Upgrading agents from the panel (agents must be re-installed to update).
+* Delete server (only revoke exists).
 
 ### Known bugs
 
@@ -56,25 +52,29 @@ freebsd, openbsd and netbsd (checked locally; CI also runs the Linux inventory o
 
 ### Security concerns
 
-* Agent private key file is `0600` on Unix. On Windows, its protection relies on the
-  directory ACL, which the Phase 2b installer must set. Until then, prefer an
-  admin-only `--config-dir`.
-* The enrolment token is passed on the command line (visible to other local users
-  in the process list while `enroll` runs). `OSRIVA_ENROLL_TOKEN` can be used instead.
-* Agent audit events are attributed to the default organization (single-org today).
+* `curl … | sudo sh` trusts the panel's TLS certificate. Operators who prefer to inspect
+  the script first can download `/api/v1/agent/install.sh` and read it.
+* The enrolment token appears in the one-liner (environment variable on Unix, parameter on
+  Windows) and may land in shell history. It is single-use and expires after 1 hour.
+
+## Phase 2a report (agent, enrolment, inventory, compatibility)
+
+Done 2026-11-02: internal CA, one-time enrolment with CA pinning before the token is sent,
+mutual-TLS agent listener, renewal and revocation, inventory (Linux, Windows, BSD), the
+compatibility engine, Servers UI. Verified with a real agent on Windows 11 and in CI on
+Ubuntu (`0674191`). Details in git history and [COMPATIBILITY_MATRIX.md](COMPATIBILITY_MATRIX.md).
 
 ## Phase 1 report (foundation)
 
 Done 2026-11-02: authentication, sessions, TOTP, RBAC, user management, audit log,
-settings, dashboard core. CI (2026-11-02, `3b7d96e`) passed, including the
-PostgreSQL 17 store contract and migration tests and both Docker image builds.
-Remaining Phase 1 gaps: see [TASKS.md](TASKS.md).
+settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 
 ## Phase overview
 
 | Phase | Scope | Status |
 |-------|-------|--------|
 | 1 | Architecture, API, DB, auth, RBAC, logging, dashboard core | ✅ Done |
-| 2a | Agent, secure enrolment, mTLS, inventory, compatibility engine, Servers UI | ✅ Done (caveats above) |
-| 2b | Universal installer, agent service install, signed releases | ⏭ Next |
-| 3–14 | See [TASKS.md](TASKS.md) | Not started |
+| 2a | Agent, secure enrolment, mTLS, inventory, compatibility engine, Servers UI | ✅ Done |
+| 2b | Installer, agent service, one-line installers | ✅ Done (caveats above) |
+| 3 | Live metrics, service management, security management, file manager | ⏭ Next |
+| 4–14 | See [TASKS.md](TASKS.md) | Not started |

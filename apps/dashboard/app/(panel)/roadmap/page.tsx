@@ -3,7 +3,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 // What exists and what does not. Kept in sync with DEVELOPMENT_STATUS.md.
 const phases: { phase: number; title: string; status: "available" | "in-progress" | "planned"; items: string[] }[] = [
   { phase: 1, title: "Foundation", status: "available", items: ["Authentication & sessions", "TOTP two-factor", "Role-based access control", "Audit log", "Panel settings"] },
-  { phase: 2, title: "Agent & installer", status: "in-progress", items: ["✓ OSRIVA Agent with OS & hardware detection (Windows 11 & Ubuntu verified; BSD compiles)", "✓ Compatibility engine", "✓ Secure enrolment & mutual-TLS reporting", "Universal installer & agent service setup (2b)"] },
+  { phase: 2, title: "Agent & installer", status: "available", items: ["OSRIVA Agent with OS & hardware detection", "Compatibility engine", "Secure enrolment & mutual-TLS reporting", "Agent as a system service (systemd, OpenRC, rc.d, Windows)", "One-line agent installers", "Control-plane installer with upgrade & rollback"] },
   { phase: 3, title: "Server management", status: "planned", items: ["Live server dashboard", "Service management", "Security management", "File manager"] },
   { phase: 4, title: "Applications", status: "planned", items: ["Docker manager", "Git & upload deployments", "Runtime adapters", "Deployment history & rollback"] },
   { phase: 5, title: "Websites & domains", status: "planned", items: ["Websites & virtual hosts", "Reverse proxy", "SSL (ACME / Let's Encrypt)", "DNS provider adapters"] },

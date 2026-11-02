@@ -31,6 +31,9 @@ a security contact address and a PGP key.)*
 | Agent enrolment | One-time 256-bit token (hash stored, 1 h, atomic single use), CA fingerprint pinned **before** the token is sent, CSR signature + key strength checked, CSR subject ignored, per-IP rate limit, all attempts audited | `fleet.Enroll`, `pkg/agentclient` |
 | Agent channel | Separate TLS 1.3 listener, client certificate required and verified, agent requests ignore forwarded headers, 1 MiB bodies, schema version checked, agent clock not trusted | `httpapi.NewAgentHandler` |
 | Agent scope | The agent executes **no** commands from the control plane in Phase 2 | `agent/` |
+| Agent service | systemd unit with `NoNewPrivileges`, `PrivateTmp`, `ProtectHome=read-only`, kernel protections, `UMask=0077`; credential dir 0700 (Unix) or a protected DACL for SYSTEM and Administrators (Windows); revoked agents exit with code 3 and are not restarted | `agent/internal/service`, `agent/internal/state` |
+| Agent distribution | Builds served only from a fixed allow-list of file names (no path traversal), SHA-256 checked by the one-line installers, scripts quote every interpolated value | `internal/agentdist` |
+| Installer | `plan` changes nothing; every change needs confirmation (or `--yes`); secrets generated locally into a 0600 file; verified database backup before upgrades with automatic rollback; `--purge` requires a typed confirmation; never touches firewall, SSH, disk or network settings | `installer/osriva-install.sh` |
 
 ## Known limitations and risks
 
