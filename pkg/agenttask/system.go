@@ -42,6 +42,8 @@ func Class(typ string) string {
 		return ClassOperate
 	case appTask(typ):
 		return ClassOperate
+	case typ == ProxyApply || typ == ProxyDisable:
+		return ClassOperate
 	}
 	return ClassRead
 }
@@ -52,7 +54,7 @@ func NeedsReauth(typ string, params json.RawMessage) bool {
 		return dockerReauth(typ, params)
 	}
 	switch typ {
-	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove:
+	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable:
 		return true
 	case ServiceAction:
 		var p ServiceActionParams

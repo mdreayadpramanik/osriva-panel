@@ -182,6 +182,8 @@ func RunTimeout(typ string) time.Duration {
 	switch typ {
 	case AppDeploy:
 		return 20 * time.Minute
+	case ProxyApply:
+		return 6 * time.Minute // may pull the Caddy image
 	case DockerImagePull, DockerContainerRun:
 		return 6 * time.Minute
 	}

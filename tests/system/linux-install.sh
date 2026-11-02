@@ -288,6 +288,50 @@ done
 [ -z "$(sudo docker images -q --filter label=dev.osriva.app)" ] || fail "app images left"
 kill "$HTTP_PID"
 
+step "Websites: Caddy reverse proxy (internal CA), reload, port conflict, disable"
+login # proxy and site changes need recent authentication
+wait_task() { # wait_task TASK_ID -> final task JSON
+	local t s i
+	for i in $(seq 1 18); do
+		t="$(api GET "/servers/$SERVER_ID/tasks/$1?wait=20")"
+		s="$(jq -r .status <<<"$t")"
+		[ "$s" = queued ] || [ "$s" = running ] || break
+	done
+	echo "$t"
+}
+put_proxy() { api PUT "/servers/$SERVER_ID/proxy" "$1" | jq -r .task.id; }
+task docker.container.run '{"image":"nginx:1.27-alpine","name":"osriva-ci-upstream","ports":[{"host_port":18085,"container_port":80}]}' 9 | jq -e '.status == "succeeded"' >/dev/null || fail "upstream container"
+
+# 443 belongs to the control plane on this machine: the agent must refuse, not break it
+wait_task "$(put_proxy '{"enabled":true,"http_port":18880,"https_port":443}')" | jq -e '.status == "failed" and (.error | contains("443 is already in use"))' >/dev/null || fail "busy port accepted"
+curl -fsS -o /dev/null "$PANEL/api/v1/meta" || fail "control plane disturbed"
+P="$(wait_task "$(put_proxy '{"enabled":true,"http_port":18880,"https_port":18443,"acme_email":"ci@example.com"}')")"
+jq -e '.status == "succeeded" and .result.running == true' <<<"$P" >/dev/null || fail "enable proxy: $P"
+[ "$(sudo docker inspect -f '{{.HostConfig.NetworkMode}} {{.HostConfig.Privileged}} {{.HostConfig.CapDrop}}' osriva-proxy)" = "host false [ALL]" ] || fail "proxy container settings"
+[ "$(sudo stat -c '%a' /var/lib/osriva-agent/proxy)" = 700 ] || fail "proxy directory permissions"
+curl -s -m 3 http://127.0.0.1:2019/config/ >/dev/null && fail "Caddy admin API reachable over TCP"
+
+SITE_ID="$(api POST "/servers/$SERVER_ID/sites" '{"domain":"ci.localhost","upstream_port":18085,"tls_mode":"internal"}' | tee /tmp/site.json | jq -r .site.id)"
+wait_task "$(jq -r .task.id /tmp/site.json)" | jq -e '.status == "succeeded"' >/dev/null || fail "site apply"
+wait_for 30 "HTTPS through the proxy" curl -fsSk --resolve ci.localhost:18443:127.0.0.1 https://ci.localhost:18443/ || fail "site not served over HTTPS"
+curl -fsSk --resolve ci.localhost:18443:127.0.0.1 https://ci.localhost:18443/ | grep -q "Welcome to nginx" || fail "wrong upstream"
+[ "$(curl -s -o /dev/null -w '%{http_code}' --resolve ci.localhost:18880:127.0.0.1 http://ci.localhost:18880/)" = 308 ] || fail "HTTP is not redirected to HTTPS"
+has_cert() { task proxy.status '{}' | jq -e '[.result.certificates[] | select(.domain == "ci.localhost")] | length == 1'; }
+wait_for 30 "certificate listed" has_cert || fail "certificate not reported"
+
+PLAIN="$(api POST "/servers/$SERVER_ID/sites" '{"domain":"plain.localhost","upstream_port":18085,"tls_mode":"none"}')"
+wait_task "$(jq -r .task.id <<<"$PLAIN")" | jq -e '.status == "succeeded"' >/dev/null || fail "plain site apply (reload)"
+curl -fsS --resolve plain.localhost:18880:127.0.0.1 http://plain.localhost:18880/ | grep -q "Welcome to nginx" || fail "plain HTTP site"
+api POST "/servers/$SERVER_ID/sites" '{"domain":"ci.localhost","upstream_port":18086,"tls_mode":"internal"}' >/dev/null 2>&1 && fail "duplicate domain accepted"
+
+wait_task "$(api DELETE "/servers/$SERVER_ID/sites/$SITE_ID" | jq -r .task.id)" | jq -e '.status == "succeeded"' >/dev/null || fail "site delete"
+curl -sk -m 5 -o /dev/null --resolve ci.localhost:18443:127.0.0.1 https://ci.localhost:18443/ -w '%{http_code}' | grep -q 200 && fail "deleted site still served"
+wait_task "$(put_proxy '{"enabled":false,"http_port":18880,"https_port":18443}')" | jq -e '.status == "succeeded" and .result.installed == false' >/dev/null || fail "disable proxy"
+sudo docker inspect osriva-proxy >/dev/null 2>&1 && fail "proxy container left"
+curl -s -m 3 -o /dev/null http://127.0.0.1:18880/ && fail "port 18880 still served"
+task docker.container.action '{"id":"osriva-ci-upstream","action":"stop"}' >/dev/null
+task docker.container.action '{"id":"osriva-ci-upstream","action":"remove"}' >/dev/null
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

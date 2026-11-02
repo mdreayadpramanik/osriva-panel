@@ -118,6 +118,7 @@ type Store interface {
 	ServerStore
 	TaskStore
 	AppStore
+	ProxyStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -328,4 +329,41 @@ type AppStore interface {
 	GetDeployment(ctx context.Context, id string) (*Deployment, error)
 	// ListDeployments returns an app's deployments, newest first.
 	ListDeployments(ctx context.Context, appID string, limit int) ([]Deployment, error)
+}
+
+// ---- Reverse proxy and websites (Phase 5) ----
+
+type ProxySettings struct {
+	ServerID    string
+	Enabled     bool
+	HTTPPort    int
+	HTTPSPort   int
+	ACMEEmail   string
+	ACMEStaging bool
+	UpdatedAt   time.Time
+}
+
+type Site struct {
+	ID           string
+	ServerID     string
+	Domain       string
+	UpstreamPort int
+	TLSMode      string
+	CreatedBy    *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// ProxyStore persists per-server proxy settings and websites. Domains are
+// unique across all servers (ErrConflict).
+type ProxyStore interface {
+	// GetProxySettings returns ErrNotFound when the server has none yet.
+	GetProxySettings(ctx context.Context, serverID string) (*ProxySettings, error)
+	SaveProxySettings(ctx context.Context, p *ProxySettings) error
+
+	CreateSite(ctx context.Context, s *Site) error
+	GetSite(ctx context.Context, id string) (*Site, error)
+	ListSites(ctx context.Context, serverID string) ([]Site, error)
+	UpdateSite(ctx context.Context, s *Site) error
+	DeleteSite(ctx context.Context, id string) error
 }

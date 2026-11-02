@@ -337,3 +337,36 @@ export type AppInput = {
   public: boolean;
   env?: Record<string, string>;
 };
+
+export type TLSMode = "acme" | "internal" | "none";
+export type ProxySettings = { enabled: boolean; http_port: number; https_port: number; acme_email: string; acme_staging: boolean };
+export type Site = {
+  id: string;
+  domain: string;
+  upstream_port: number;
+  tls_mode: TLSMode;
+  created_at: string;
+  updated_at: string;
+  dns?: { addresses: string[]; points_here: boolean; error?: string };
+};
+export type Websites = { proxy: ProxySettings; server_ip: string; sites: Site[] };
+export type Certificate = { domain: string; issuer: string; not_after: string };
+export type ProxyStatus = {
+  installed: boolean;
+  running: boolean;
+  state?: string;
+  image?: string;
+  applied?: { http_port: number; https_port: number; sites: { domain: string }[] };
+  certificates: Certificate[];
+};
+
+/** Waits for a task the API already queued (for example by a settings change). */
+export async function waitTask<R>(serverId: string, task: Task<R>, rounds = 18): Promise<R> {
+  let t = task;
+  for (let i = 0; i < rounds && (t.status === "queued" || t.status === "running"); i++) {
+    t = await api<Task<R>>(`/servers/${serverId}/tasks/${t.id}?wait=20`);
+  }
+  if (t.status === "succeeded") return t.result as R;
+  if (t.status === "queued" || t.status === "running") throw new ApiError(504, "task_pending", "The agent has not answered yet. Is it online?");
+  throw new ApiError(502, `task_${t.status}`, t.error || `Task ${t.status}.`);
+}

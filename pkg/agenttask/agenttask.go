@@ -27,10 +27,14 @@ var Types = map[string]bool{
 	DockerInfo: true, DockerContainers: true, DockerContainerAction: true, DockerContainerLogs: true, DockerContainerRun: true,
 	DockerImages: true, DockerImagePull: true, DockerImageRemove: true, DockerImagesPrune: true, DockerVolumes: true, DockerNetworks: true,
 	AppDeploy: true, AppRemove: true,
+	ProxyStatus: true, ProxyApply: true, ProxyDisable: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
 func ReadOnly(typ string) bool {
+	if typ == ProxyStatus {
+		return true
+	}
 	if dockerTask(typ) {
 		return dockerReadOnly(typ)
 	}
@@ -115,6 +119,8 @@ func Validate(typ string, params json.RawMessage) error {
 		return validateDocker(typ, params)
 	case AppDeploy, AppRemove:
 		return validateApp(typ, params)
+	case ProxyStatus, ProxyApply, ProxyDisable:
+		return validateProxy(typ, params)
 	default:
 		return validateSystem(typ, params)
 	}

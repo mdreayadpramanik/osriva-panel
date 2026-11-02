@@ -748,6 +748,64 @@ paths:
       responses:
         "202": { description: "Deployment of kind `rollback`" }
         "409": { $ref: "#/components/responses/Error" }
+  /servers/{id}/websites:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [websites]
+      summary: Proxy settings and websites of a server with a DNS hint per domain (servers.read)
+      responses:
+        "200": { description: "`{proxy: {enabled, http_port, https_port, acme_email, acme_staging}, server_ip, sites: [{id, domain, upstream_port, tls_mode, dns: {addresses, points_here, error?}}]}`" }
+  /servers/{id}/proxy:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    put:
+      tags: [websites]
+      summary: Save the reverse proxy settings and apply them (servers.operate + re-auth); disabling removes the proxy container
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                http_port: { type: integer }
+                https_port: { type: integer }
+                acme_email: { type: string }
+                acme_staging: { type: boolean }
+      responses:
+        "200": { description: "`{proxy, task}`: the queued proxy.apply or proxy.disable task (or null)" }
+  /servers/{id}/sites:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [websites]
+      summary: Add a website (servers.operate + re-auth); applied at once when the proxy is on
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, upstream_port, tls_mode]
+              properties:
+                domain: { type: string, description: "Lower-case DNS name; unique across servers; no wildcards or IPs" }
+                upstream_port: { type: integer, description: "Local port on the server (127.0.0.1)" }
+                tls_mode: { type: string, enum: [acme, internal, none] }
+      responses:
+        "201": { description: "`{site, task}`" }
+  /servers/{id}/sites/{siteId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: siteId, in: path, required: true, schema: { type: string, format: uuid } }
+    put:
+      tags: [websites]
+      summary: Change a website (servers.operate + re-auth)
+      responses:
+        "200": { description: "`{site, task}`" }
+    delete:
+      tags: [websites]
+      summary: Stop serving a website (servers.operate + re-auth)
+      responses:
+        "200": { description: "`{task}`" }
   /servers/{id}/metrics:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:

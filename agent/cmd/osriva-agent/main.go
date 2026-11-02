@@ -30,7 +30,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
-var version = "0.7.0-dev"
+var version = "0.8.0-dev"
 
 const usage = `OSRIVA Agent
 

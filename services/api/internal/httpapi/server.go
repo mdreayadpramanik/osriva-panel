@@ -138,6 +138,11 @@ func (s *Server) routes() http.Handler {
 			r.Post("/servers/{id}/apps/{appId}/deployments", s.handleDeployApp)
 			r.Get("/servers/{id}/apps/{appId}/deployments/{depId}", s.handleGetDeployment)
 			r.Post("/servers/{id}/apps/{appId}/deployments/{depId}/rollback", s.handleRollbackApp)
+			r.Get("/servers/{id}/websites", s.handleWebsites)
+			r.Put("/servers/{id}/proxy", s.handleSaveProxy)
+			r.Post("/servers/{id}/sites", s.handleCreateSite)
+			r.Put("/servers/{id}/sites/{siteId}", s.handleUpdateSite)
+			r.Delete("/servers/{id}/sites/{siteId}", s.handleDeleteSite)
 		})
 	})
 	return r
