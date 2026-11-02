@@ -46,6 +46,7 @@ services:
 
   api:
     image: osriva/api:local
+    pull_policy: never # built by the migrate service from the same Dockerfile
     restart: unless-stopped
     command: ["serve"]
     environment: *api-env

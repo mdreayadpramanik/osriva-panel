@@ -129,7 +129,8 @@ KEY_DIR="$(mktemp -d)"
 ssh-keygen -q -t ed25519 -N '' -C osriva-ci-key -f "$KEY_DIR/id"
 PUB="$(cat "$KEY_DIR/id.pub")"
 FP="$(ssh-keygen -lf "$KEY_DIR/id.pub" | awk '{print $2}')"
-task sshkeys.add "$(jq -nc --arg k "$PUB" '{user:"osriva-ci",key:$k}')" | jq -e '.status == "succeeded" and .result.added == true' >/dev/null
+ADD="$(task sshkeys.add "$(jq -nc --arg k "$PUB" '{user:"osriva-ci",key:$k}')")"
+jq -e '.status == "succeeded" and .result.added == true' <<<"$ADD" >/dev/null || fail "sshkeys.add: $ADD"
 sudo stat -c '%a %U' /home/osriva-ci/.ssh | grep -qx '700 osriva-ci' || fail "~/.ssh owner/mode"
 sudo stat -c '%a %U' /home/osriva-ci/.ssh/authorized_keys | grep -qx '600 osriva-ci' || fail "authorized_keys owner/mode"
 task sshkeys.list '{"user":"osriva-ci"}' | jq -e --arg fp "$FP" '[.result.keys[] | select(.fingerprint == $fp)] | length == 1' >/dev/null

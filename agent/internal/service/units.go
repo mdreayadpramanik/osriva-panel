@@ -38,10 +38,10 @@ ExecStart=%s run --config-dir %s
 Restart=on-failure
 RestartSec=10s
 # Exit code 3 means the control plane revoked this agent: do not restart.
+# /home and /root stay writable: SSH key management writes ~/.ssh/authorized_keys.
 RestartPreventExitStatus=3
 NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectHome=read-only
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes

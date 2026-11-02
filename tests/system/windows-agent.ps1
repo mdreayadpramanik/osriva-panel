@@ -121,7 +121,10 @@ try {
 
     Step 'users, scheduled tasks, time'
     $u = Run-Task 'users.list'
-    if ($u.status -ne 'succeeded' -or -not ($u.result.users | Where-Object name -eq 'Administrator') -or -not ($u.result.groups | Where-Object name -eq 'Administrators')) { throw "users.list: $($u.error)" }
+    $me = $env:USERNAME
+    if ($u.status -ne 'succeeded' -or -not ($u.result.users | Where-Object name -eq $me) -or -not ($u.result.groups | Where-Object name -eq 'Administrators')) {
+        throw "users.list (looking for $me): status=$($u.status) error=$($u.error) result=$($u.result | ConvertTo-Json -Depth 4 -Compress)"
+    }
     $c = Run-Task 'cron.list'
     if ($c.status -ne 'succeeded' -or $c.result.backend -ne 'windows-task-scheduler') { throw "cron.list: $($c.error)" }
     $ti = Run-Task 'system.time'
