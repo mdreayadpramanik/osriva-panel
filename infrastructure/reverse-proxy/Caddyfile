@@ -14,11 +14,17 @@
 	@internal path /healthz /readyz
 	respond @internal 404
 
+	# lb_try_duration: keep retrying for a few seconds while a container is
+	# being recreated (upgrade, rollback, repair) instead of returning 502.
 	handle /api/* {
-		reverse_proxy api:8080
+		reverse_proxy api:8080 {
+			lb_try_duration 10s
+		}
 	}
 
 	handle {
-		reverse_proxy dashboard:3000
+		reverse_proxy dashboard:3000 {
+			lb_try_duration 10s
+		}
 	}
 }

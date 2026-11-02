@@ -70,6 +70,12 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
+# Commands other than install act on an existing installation: take the domain
+# from its configuration unless one was given explicitly.
+if [ -z "$DOMAIN" ] && [ -r "$ENV_FILE" ]; then
+	DOMAIN="$(sed -n 's/^OSRIVA_DOMAIN=//p' "$ENV_FILE" | tail -n 1)"
+fi
+
 # ---------- output helpers ----------
 if [ -t 1 ]; then B=$'\e[1m'; G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; N=$'\e[0m'; else B="" G="" Y="" R="" N=""; fi
 info() { printf '%s==>%s %s\n' "$B" "$N" "$*"; }
@@ -77,7 +83,7 @@ ok() { printf '  %s✓%s %s\n' "$G" "$N" "$*"; }
 warn() { printf '  %s!%s %s\n' "$Y" "$N" "$*"; }
 bad() { printf '  %s✗%s %s\n' "$R" "$N" "$*"; }
 die() { printf '%serror:%s %s\n' "$R" "$N" "$*" >&2; exit 1; }
-trap 'die "command failed at line $LINENO: $BASH_COMMAND"' ERR
+trap 'case "$BASH_COMMAND" in return*) ;; *) die "command failed at line $LINENO: $BASH_COMMAND" ;; esac' ERR
 
 confirm() {
 	[ "$ASSUME_YES" -eq 1 ] && return 0
@@ -214,10 +220,15 @@ EOF
 	ok "wrote $ENV_FILE (mode 0600)"
 }
 
+# wait_ready waits until the API answers internally AND the public HTTPS
+# routes through Caddy work (containers need a few seconds after recreation).
 wait_ready() {
 	local i
 	for i in $(seq 1 90); do
-		if compose exec -T caddy wget -qO- http://api:8080/readyz >/dev/null 2>&1; then return 0; fi
+		if compose exec -T caddy wget -qO- http://api:8080/readyz >/dev/null 2>&1 &&
+			https_get /api/v1/meta >/dev/null 2>&1 && https_get /login >/dev/null 2>&1; then
+			return 0
+		fi
 		sleep 2
 	done
 	return 1
@@ -226,9 +237,14 @@ wait_ready() {
 # ---------- checks ----------
 VERIFY_FAILED=0
 check() {
-	local name="$1"
+	local name="$1" out
 	shift
-	if "$@" >/dev/null 2>&1; then ok "$name"; else bad "$name"; VERIFY_FAILED=1; fi
+	if out="$("$@" 2>&1)"; then
+		ok "$name"
+	else
+		bad "$name${out:+: $(printf '%s' "$out" | tail -n 1 | cut -c1-200)}"
+		VERIFY_FAILED=1
+	fi
 }
 
 running() {
@@ -245,8 +261,9 @@ https_get() {
 
 do_verify() {
 	VERIFY_FAILED=0
-	info "Verifying"
+	info "Verifying https://$DOMAIN"
 	[ -L "$PREFIX/current" ] || die "OSRIVA is not installed ($PREFIX/current missing)"
+	[ -n "$DOMAIN" ] || die "no domain: pass --domain or check OSRIVA_DOMAIN in $ENV_FILE"
 	local svc
 	for svc in postgres api dashboard caddy; do
 		check "container $svc running" running "$svc"
