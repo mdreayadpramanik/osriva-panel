@@ -28,7 +28,8 @@
 - [x] Compatibility engine with the 6 statuses, reasons and alternatives
 - [x] Migration `0002_servers_agents.sql` + store contract tests
 - [x] Dashboard: Servers list, Add-server flow, server detail with capabilities
-- [~] Linux inventory on a real host (runs in CI on Ubuntu after the next push; add `linux/amd64` to `compat.testedPlatforms` once green)
+- [x] Linux inventory on Ubuntu (CI runner, `0674191`); `linux/amd64` added to `compat.testedPlatforms`
+- [ ] Linux inventory on other distributions and on ARM64
 - [ ] BSD inventory verified on real FreeBSD/OpenBSD/NetBSD; OpenBSD/NetBSD disk inventory
 - [ ] Delete server (pending/revoked)
 

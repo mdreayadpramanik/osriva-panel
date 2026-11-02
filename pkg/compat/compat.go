@@ -40,6 +40,7 @@ type Capability struct {
 // verified on a real host. Update only with evidence (see COMPATIBILITY_MATRIX.md).
 var testedPlatforms = map[string]string{
 	"windows/amd64": "verified on Windows 11 (2026-11-02)",
+	"linux/amd64":   "verified on Ubuntu in CI (2026-11-02)",
 }
 
 // targetFamilies are OS families OSRIVA intends to manage.

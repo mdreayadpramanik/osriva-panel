@@ -12,8 +12,8 @@ Last updated: 2026-11-02 (Phase 1).
 | Platform | Status | Evidence / notes |
 |----------|--------|------------------|
 | Windows 11 x86_64, Go 1.27.3, Node 24, in-memory store | PARTIALLY_SUPPORTED | Development only: unit + HTTP tests pass, dashboard built and exercised in a browser (2026-11-02). Not a production target. |
-| Linux x86_64 (Ubuntu runner), Go 1.26, PostgreSQL 17 | PARTIALLY_SUPPORTED | GitHub Actions CI passed on 2026-11-02 (commit 3b7d96e): gofmt, vet, `go test -race` including the PostgreSQL contract and migration tests. Not yet run as a long-lived deployment. |
-| Docker images (API, dashboard) | PARTIALLY_SUPPORTED | Both images built in CI on 2026-11-02. Containers not yet started. |
+| Linux x86_64 (Ubuntu runner), Go 1.26, PostgreSQL 17 | PARTIALLY_SUPPORTED | GitHub Actions CI passed on 2026-11-02 (latest `0674191`): gofmt, vet, `go test -race` including the PostgreSQL contract tests for identity, servers and agents. Not yet run as a long-lived deployment. |
+| Docker images (API, dashboard) | PARTIALLY_SUPPORTED | Both images built in CI (latest `0674191`). Containers not yet started. |
 | Docker Compose stack | NOT_TESTED | `docker compose up` has never been run. |
 | Linux ARM64 | NOT_TESTED | Static Go binary should cross-compile. Unverified. |
 | PostgreSQL 17 | SUPPORTED | Store contract suite and migration idempotency test passed in CI on 2026-11-02. |
@@ -30,7 +30,8 @@ and enrolment only**.
 | Windows 11 x86_64 | SUPPORTED | Real agent enrolled, reported and was revoked on Windows 11 Pro 25H2 (2026-11-02). |
 | Windows Server | NOT_TESTED | Same Win32/registry code paths as Windows 11; not run on Server yet. |
 | Windows ARM64 | NOT_TESTED | Compiles. |
-| Linux x86_64 (Ubuntu, Debian, RHEL family, SUSE, Arch …) | NOT_TESTED | Parsers unit-tested with real file formats; `Collect()` runs in CI on Ubuntu after the next push. |
+| Linux x86_64, Ubuntu | SUPPORTED | CI on the GitHub Actions Ubuntu runner passed (2026-11-02, `0674191`): `osriva-agent inventory` checked with jq, plus the full enrol → mTLS report → renew → revoke tests. Not yet run on a long-lived VPS. |
+| Linux x86_64, other distributions (Debian, RHEL family, SUSE, Arch …) | NOT_TESTED | Same procfs/sysfs code paths; os-release parsing unit-tested. Never run on these distributions. |
 | Linux ARM64 / ARMv7 | NOT_TESTED | Compiles. |
 | FreeBSD | NOT_TESTED | sysctl + getfsstat collector compiles; never run. |
 | OpenBSD, NetBSD | PARTIALLY_SUPPORTED (expected) | Compiles; disk inventory not implemented (reported as a warning). Never run. |

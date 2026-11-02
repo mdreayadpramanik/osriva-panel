@@ -41,8 +41,12 @@ func TestPlatformStatuses(t *testing.T) {
 		t.Errorf("windows/amd64: %s", s)
 	}
 	inv := linuxHost()
+	if s := byKey(Evaluate(inv))["agent.inventory"].Status; s != Supported {
+		t.Errorf("linux/amd64: %s", s)
+	}
+	inv.OS.Arch = "arm64"
 	if s := byKey(Evaluate(inv))["agent.inventory"].Status; s != NotTested {
-		t.Errorf("linux/amd64 (not yet verified on a real host): %s", s)
+		t.Errorf("linux/arm64 (never run on a real host): %s", s)
 	}
 	inv.OS.Family = "darwin"
 	if s := byKey(Evaluate(inv))["agent.inventory"].Status; s != Unsupported {

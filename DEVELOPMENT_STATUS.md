@@ -22,7 +22,7 @@ their agents report. It cannot change anything on a server yet.
 | Agent CLI: `inventory`, `enroll`, `run` (backoff, renewal), `status`; atomic credential writes | `state` tests + real run |
 | Servers API (`/servers`, detail, token regeneration, revoke) + OpenAPI | e2e + browser |
 | Dashboard: Servers list (online/offline/pending/revoked), Add-server flow with one-time command, server detail (system, hardware, network, storage, compatibility), overview counts | `tsc` + `next build`; detail page checked in a browser with the real agent's data |
-| Store contract extended (CA, servers, enrolment, certificates, reports) | memstore locally; PostgreSQL in CI |
+| Store contract extended (CA, servers, enrolment, certificates, reports) | memstore locally; PostgreSQL 17 in CI, passed (`0674191`) |
 
 **Real end-to-end run (2026-11-02, this Windows 11 PC):** an actual `osriva-agent.exe`
 was enrolled through the panel, reported over mutual TLS, and the dashboard showed
@@ -34,8 +34,8 @@ freebsd, openbsd and netbsd (checked locally; CI also runs the Linux inventory o
 
 ### Partially implemented / untested
 
-* **Linux inventory on a real host:** parsers unit-tested, `Collect()` runs in CI on
-  the Ubuntu runner (after the next push). It has not been run on a real VPS.
+* **Linux:** verified on the Ubuntu CI runner (inventory plus the full enrol/report/renew/revoke
+  tests, `0674191`). Not yet run on a long-lived VPS or on other distributions.
 * **BSD inventory:** compiles, never run. Disk inventory on OpenBSD/NetBSD is not
   implemented and reported as a warning.
 * **No agent service:** `osriva-agent run` must be started by hand. Service
