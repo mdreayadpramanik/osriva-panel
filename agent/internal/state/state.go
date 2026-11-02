@@ -32,6 +32,9 @@ type State struct {
 	CAPEM   []byte
 	CertPEM []byte
 	KeyPEM  []byte
+	// Secured reports whether Save restricted the directory to administrators
+	// (always on Unix; on Windows only from an elevated process).
+	Secured bool
 }
 
 // DefaultDir is the platform's system configuration location for the agent.
@@ -107,6 +110,12 @@ func (s *State) Save() error {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return err
 	}
+	// Restrict the directory before any secret is written into it.
+	secured, err := secureDir(s.Dir)
+	if err != nil {
+		return err
+	}
+	s.Secured = secured
 	cfg, err := json.MarshalIndent(s.Config, "", "  ")
 	if err != nil {
 		return err

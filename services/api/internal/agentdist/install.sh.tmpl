@@ -1,0 +1,95 @@
+#!/bin/sh
+# OSRIVA Agent installer, served by your OSRIVA Panel at {{.PanelURL}}.
+#
+#   curl -fsSL {{.PanelURL}}/api/v1/agent/install.sh | sudo OSRIVA_ENROLL_TOKEN=... sh -s -- --ca-fingerprint sha256:...
+#
+# Downloads the agent for this OS/architecture from the panel, verifies its
+# SHA-256, enrols this host (the agent pins the panel's CA fingerprint before
+# it sends the token) and installs it as a system service. It changes nothing
+# else: no firewall, SSH, package or network settings.
+set -eu
+
+PANEL_URL={{.PanelURLQuoted}}
+TOKEN="${OSRIVA_ENROLL_TOKEN:-}"
+FINGERPRINT=""
+CONFIG_DIR=""
+
+usage() {
+	echo "usage: OSRIVA_ENROLL_TOKEN=TOKEN sh install.sh --ca-fingerprint sha256:... [--config-dir DIR]"
+}
+die() { echo "osriva-agent install: error: $*" >&2; exit 1; }
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--token) [ $# -ge 2 ] || die "--token needs a value"; TOKEN="$2"; shift 2 ;;
+	--ca-fingerprint) [ $# -ge 2 ] || die "--ca-fingerprint needs a value"; FINGERPRINT="$2"; shift 2 ;;
+	--config-dir) [ $# -ge 2 ] || die "--config-dir needs a value"; CONFIG_DIR="$2"; shift 2 ;;
+	-h | --help) usage; exit 0 ;;
+	*) usage >&2; die "unknown option: $1" ;;
+	esac
+done
+[ -n "$TOKEN" ] || { usage >&2; die "no enrolment token (set OSRIVA_ENROLL_TOKEN or pass --token)"; }
+[ -n "$FINGERPRINT" ] || { usage >&2; die "--ca-fingerprint is required"; }
+[ "$(id -u)" -eq 0 ] || die "run as root (for example with sudo)"
+
+case "$(uname -s)" in
+Linux) OS=linux ;;
+FreeBSD) OS=freebsd ;;
+OpenBSD) OS=openbsd ;;
+NetBSD) OS=netbsd ;;
+*) die "unsupported operating system: $(uname -s)" ;;
+esac
+case "$(uname -m)" in
+x86_64 | amd64) ARCH=amd64 ;;
+aarch64 | arm64) ARCH=arm64 ;;
+armv7l | armv6l | arm) ARCH=arm ;;
+*) die "unsupported architecture: $(uname -m)" ;;
+esac
+
+fetch() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$1" -o "$2"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -q -O "$2" "$1"
+	elif command -v fetch >/dev/null 2>&1; then
+		fetch -q -o "$2" "$1"
+	else
+		die "curl, wget or fetch is required"
+	fi
+}
+
+sha256_of() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | cut -d' ' -f1
+	elif command -v shasum >/dev/null 2>&1; then
+		shasum -a 256 "$1" | cut -d' ' -f1
+	elif command -v sha256 >/dev/null 2>&1; then
+		sha256 -q "$1"
+	else
+		die "no SHA-256 tool found (sha256sum, shasum or sha256)"
+	fi
+}
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+echo "==> downloading osriva-agent ($OS/$ARCH) from $PANEL_URL"
+fetch "$PANEL_URL/api/v1/agent/download/$OS/$ARCH" "$TMP/osriva-agent" ||
+	die "the panel has no agent build for $OS/$ARCH"
+fetch "$PANEL_URL/api/v1/agent/download/$OS/$ARCH/sha256" "$TMP/sha256"
+WANT=$(tr -d ' \r\n' <"$TMP/sha256")
+GOT=$(sha256_of "$TMP/osriva-agent")
+[ "$GOT" = "$WANT" ] || die "checksum mismatch (expected $WANT, got $GOT)"
+echo "==> checksum ok ($GOT)"
+chmod 0755 "$TMP/osriva-agent"
+
+set -- enroll --panel-url "$PANEL_URL" --ca-fingerprint "$FINGERPRINT"
+[ -z "$CONFIG_DIR" ] || set -- "$@" --config-dir "$CONFIG_DIR"
+echo "==> enrolling"
+OSRIVA_ENROLL_TOKEN="$TOKEN" "$TMP/osriva-agent" "$@"
+
+set -- service install
+[ -z "$CONFIG_DIR" ] || set -- "$@" --config-dir "$CONFIG_DIR"
+echo "==> installing the system service"
+"$TMP/osriva-agent" "$@"
+echo "==> done. The server should appear as online in the panel within a minute."

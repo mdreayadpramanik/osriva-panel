@@ -1,0 +1,39 @@
+name: System tests
+
+# Real installs on disposable CI machines: the control-plane installer on
+# Ubuntu (Docker Compose) with an agent as a systemd service, and the agent as
+# a Windows service. These are the evidence behind COMPATIBILITY_MATRIX.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-installer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install, enrol, upgrade, rollback, revoke, uninstall
+        run: bash tests/system/linux-install.sh
+      - name: Diagnostics
+        if: failure()
+        run: |
+          sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml ps -a || true
+          sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml logs --tail 200 || true
+          sudo journalctl -u osriva-agent --no-pager -n 200 || true
+
+  windows-agent:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Agent as a Windows service via the one-line installer
+        shell: powershell
+        run: ./tests/system/windows-agent.ps1

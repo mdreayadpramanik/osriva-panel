@@ -153,6 +153,8 @@ export type Enrollment = {
   panel_url: string;
   ca_fingerprint: string;
   command: string;
+  install_unix: string;
+  install_windows: string;
 };
 
 export type CapabilityStatus =

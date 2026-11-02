@@ -40,6 +40,7 @@ type Config struct {
 	PublicURL      string // base URL users and agents use for the panel, e.g. https://panel.example.com
 	AgentAddr      string // listen address of the mutual-TLS agent listener, e.g. :8443
 	AgentPublicURL string // https URL agents use to reach AgentAddr, e.g. https://panel.example.com:8443
+	AgentDistDir   string // directory with osriva-agent-<os>-<arch>[.exe] builds served to servers
 }
 
 // AgentEnabled reports whether agent enrolment is configured.
@@ -132,6 +133,7 @@ func Load(getenv func(string) string) (*Config, error) {
 	c.PublicURL = strings.TrimRight(get("OSRIVA_PUBLIC_URL", ""), "/")
 	c.AgentAddr = get("OSRIVA_AGENT_ADDR", "")
 	c.AgentPublicURL = strings.TrimRight(get("OSRIVA_AGENT_PUBLIC_URL", ""), "/")
+	c.AgentDistDir = get("OSRIVA_AGENT_DIST_DIR", "")
 	if c.AgentAddr != "" || c.AgentPublicURL != "" {
 		if c.AgentAddr == "" || c.AgentPublicURL == "" || c.PublicURL == "" {
 			errs = append(errs, errors.New("OSRIVA_AGENT_ADDR, OSRIVA_AGENT_PUBLIC_URL and OSRIVA_PUBLIC_URL must be set together"))

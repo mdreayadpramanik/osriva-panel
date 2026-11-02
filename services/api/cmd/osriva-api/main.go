@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/migrations"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/config"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/httpapi"
@@ -185,8 +186,13 @@ func cmdServe() error {
 	if err != nil {
 		return err
 	}
+	dist, err := agentdist.Load(rt.cfg.AgentDistDir, rt.cfg.PublicURL)
+	if err != nil {
+		return err
+	}
+	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, DB: rt.store, Log: rt.log, Version: version,
+		Identity: rt.id, Fleet: fl, AgentDist: dist, DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}
 	newServer := func(addr string, h http.Handler) *http.Server {

@@ -1,0 +1,54 @@
+# OSRIVA Agent installer for Windows, served by your OSRIVA Panel at {{.PanelURL}}.
+#
+# In an elevated (Administrator) PowerShell:
+#   & ([scriptblock]::Create((irm '{{.PanelURL}}/api/v1/agent/install.ps1'))) -Token '...' -CaFingerprint 'sha256:...'
+#
+# Downloads the agent from the panel, verifies its SHA-256, enrols this host (the
+# agent pins the panel's CA fingerprint before it sends the token) and installs
+# it as a Windows service. It changes nothing else (no firewall or network settings).
+param(
+    [Parameter(Mandatory = $true)][string]$Token,
+    [Parameter(Mandatory = $true)][string]$CaFingerprint,
+    [string]$ConfigDir = ''
+)
+$ErrorActionPreference = 'Stop'
+$PanelUrl = {{.PanelURLPSQuoted}}
+
+$principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw 'Run this in an elevated PowerShell (Run as Administrator).'
+}
+switch ($env:PROCESSOR_ARCHITECTURE) {
+    'AMD64' { $arch = 'amd64' }
+    'ARM64' { $arch = 'arm64' }
+    default { throw "Unsupported architecture: $env:PROCESSOR_ARCHITECTURE" }
+}
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$tmp = Join-Path $env:TEMP ('osriva-agent-' + [guid]::NewGuid().ToString('N') + '.exe')
+try {
+    Write-Host "==> downloading osriva-agent (windows/$arch) from $PanelUrl"
+    Invoke-WebRequest -UseBasicParsing -Uri "$PanelUrl/api/v1/agent/download/windows/$arch" -OutFile $tmp
+    $want = ([string](Invoke-WebRequest -UseBasicParsing -Uri "$PanelUrl/api/v1/agent/download/windows/$arch/sha256").Content).Trim()
+    $got = (Get-FileHash -Algorithm SHA256 -Path $tmp).Hash.ToLowerInvariant()
+    if ($got -ne $want) { throw "Checksum mismatch (expected $want, got $got)" }
+    Write-Host "==> checksum ok ($got)"
+
+    $env:OSRIVA_ENROLL_TOKEN = $Token
+    $enrollArgs = @('enroll', '--panel-url', $PanelUrl, '--ca-fingerprint', $CaFingerprint)
+    if ($ConfigDir) { $enrollArgs += @('--config-dir', $ConfigDir) }
+    Write-Host '==> enrolling'
+    & $tmp @enrollArgs
+    if ($LASTEXITCODE -ne 0) { throw "Enrolment failed (exit code $LASTEXITCODE)" }
+
+    $serviceArgs = @('service', 'install')
+    if ($ConfigDir) { $serviceArgs += @('--config-dir', $ConfigDir) }
+    Write-Host '==> installing the Windows service'
+    & $tmp @serviceArgs
+    if ($LASTEXITCODE -ne 0) { throw "Service installation failed (exit code $LASTEXITCODE)" }
+    Write-Host '==> done. The server should appear as online in the panel within a minute.'
+}
+finally {
+    Remove-Item Env:OSRIVA_ENROLL_TOKEN -ErrorAction SilentlyContinue
+    Remove-Item $tmp -ErrorAction SilentlyContinue
+}

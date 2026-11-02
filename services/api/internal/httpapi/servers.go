@@ -47,10 +47,20 @@ type enrollmentDTO struct {
 	PanelURL      string `json:"panel_url"`
 	CAFingerprint string `json:"ca_fingerprint"`
 	Command       string `json:"command"`
+	// One-line installers; empty when this panel has no agent builds for that OS family.
+	InstallUnix    string `json:"install_unix"`
+	InstallWindows string `json:"install_windows"`
 }
 
-func toEnrollmentDTO(e *fleet.Enrollment) enrollmentDTO {
-	return enrollmentDTO{Token: e.Token, ExpiresAt: ts(e.ExpiresAt), PanelURL: e.PanelURL, CAFingerprint: e.CAFingerprint, Command: e.Command}
+func (s *Server) toEnrollmentDTO(e *fleet.Enrollment) enrollmentDTO {
+	d := enrollmentDTO{Token: e.Token, ExpiresAt: ts(e.ExpiresAt), PanelURL: e.PanelURL, CAFingerprint: e.CAFingerprint, Command: e.Command}
+	if s.dist != nil && s.dist.HasFamily("unix") {
+		d.InstallUnix = s.dist.UnixCommand(e.Token, e.CAFingerprint)
+	}
+	if s.dist != nil && s.dist.HasFamily("windows") {
+		d.InstallWindows = s.dist.WindowsCommand(e.Token, e.CAFingerprint)
+	}
+	return d
 }
 
 func (s *Server) handleListServers(w http.ResponseWriter, r *http.Request) {
@@ -88,7 +98,7 @@ func (s *Server) handleCreateServer(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"server": toServerDTO(*v), "enrollment": toEnrollmentDTO(enr)})
+	writeJSON(w, http.StatusCreated, map[string]any{"server": toServerDTO(*v), "enrollment": s.toEnrollmentDTO(enr)})
 }
 
 func (s *Server) handleGetServer(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +125,7 @@ func (s *Server) handleRegenerateEnrollment(w http.ResponseWriter, r *http.Reque
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enrollment": toEnrollmentDTO(enr)})
+	writeJSON(w, http.StatusOK, map[string]any{"enrollment": s.toEnrollmentDTO(enr)})
 }
 
 func (s *Server) handleRevokeServer(w http.ResponseWriter, r *http.Request) {

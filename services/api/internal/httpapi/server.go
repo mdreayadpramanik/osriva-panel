@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
@@ -23,6 +24,7 @@ type Pinger interface {
 type Options struct {
 	Identity       *identity.Service
 	Fleet          *fleet.Service
+	AgentDist      *agentdist.Dist
 	DB             Pinger
 	Log            *slog.Logger
 	Version        string
@@ -36,6 +38,7 @@ type Options struct {
 type Server struct {
 	id             *identity.Service
 	fleet          *fleet.Service
+	dist           *agentdist.Dist
 	db             Pinger
 	log            *slog.Logger
 	version        string
@@ -47,7 +50,7 @@ type Server struct {
 
 func New(o Options) http.Handler {
 	s := &Server{
-		id: o.Identity, fleet: o.Fleet, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
+		id: o.Identity, fleet: o.Fleet, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
 		sessionTTL: o.SessionTTL, trustedProxies: o.TrustedProxies, apiLimiter: o.APILimiter,
 	}
 	if s.log == nil {
@@ -55,6 +58,9 @@ func New(o Options) http.Handler {
 	}
 	if s.apiLimiter == nil {
 		s.apiLimiter = ratelimit.NewKeyed(20, 60)
+	}
+	if s.dist == nil {
+		s.dist, _ = agentdist.Load("", "") // no builds: downloads answer 404
 	}
 	if s.sessionTTL == 0 {
 		s.sessionTTL = 12 * time.Hour
@@ -81,6 +87,11 @@ func (s *Server) routes() http.Handler {
 		r.Get("/openapi.yaml", s.handleOpenAPI)
 		r.Post("/auth/login", s.handleLogin)
 		r.Get("/agent/ca", s.handleAgentCA)
+		r.Get("/agent/downloads", s.handleAgentDownloads)
+		r.Get("/agent/download/{os}/{arch}", s.handleAgentDownload)
+		r.Get("/agent/download/{os}/{arch}/sha256", s.handleAgentDownloadSHA)
+		r.Get("/agent/install.sh", s.handleAgentInstallSh)
+		r.Get("/agent/install.ps1", s.handleAgentInstallPs1)
 		r.Post("/agent/enroll", s.handleAgentEnroll)
 
 		r.Group(func(r chi.Router) {

@@ -9,13 +9,16 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/mdreayadpramanik/osriva-panel/agent/internal/service"
 	"github.com/mdreayadpramanik/osriva-panel/agent/internal/state"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentclient"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentproto"
@@ -33,6 +36,8 @@ Usage:
                                             Enrol this host (token may also come from OSRIVA_ENROLL_TOKEN)
   osriva-agent run [--once]                 Report to the control plane every 60 s
   osriva-agent status                       Show enrolment state and certificate expiry
+  osriva-agent service install|uninstall|status
+                                            Run the agent as a system service (root / Administrator)
   osriva-agent version
 
 All commands except inventory accept --config-dir (default: ` + "%s" + `).
@@ -53,6 +58,8 @@ func main() {
 		err = cmdRun(os.Args[2:])
 	case "status":
 		err = cmdStatus(os.Args[2:])
+	case "service":
+		err = cmdService(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println(version)
 	case "help", "--help", "-h":
@@ -63,6 +70,9 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
+		if errors.Is(err, service.ErrRevoked) {
+			os.Exit(3) // service managers are configured not to restart on 3
+		}
 		os.Exit(1)
 	}
 }
@@ -114,8 +124,48 @@ func cmdEnroll(args []string) error {
 	if err := st.Save(); err != nil {
 		return fmt.Errorf("enrolled, but saving credentials failed (revoke this server in the panel and retry): %w", err)
 	}
-	fmt.Printf("enrolled as %q (%s)\ncredentials saved in %s\nnext: run `osriva-agent run` (the Phase 2b installer will set this up as a service)\n",
-		res.Response.ServerName, res.Response.ServerID, *dir)
+	fmt.Printf("enrolled as %q (%s)\ncredentials saved in %s\n", res.Response.ServerName, res.Response.ServerID, *dir)
+	if !st.Secured {
+		fmt.Println("warning: not elevated, so the credential directory was not restricted to administrators")
+	}
+	fmt.Println("next: `osriva-agent service install` (as root / Administrator) to run it as a service")
+	return nil
+}
+
+func cmdService(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: osriva-agent service install|uninstall|status [--config-dir DIR]")
+	}
+	fs := flag.NewFlagSet("service "+args[0], flag.ContinueOnError)
+	dir := fs.String("config-dir", state.DefaultDir(), "agent state directory")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	switch args[0] {
+	case "install":
+		// Refuse to install a service that would only crash-loop.
+		if _, err := state.Load(*dir); err != nil {
+			return fmt.Errorf("cannot install the service: %w", err)
+		}
+		if err := service.Install(service.Options{ConfigDir: *dir}); err != nil {
+			return err
+		}
+		st, _ := service.Query()
+		fmt.Printf("service %s installed (%s), binary %s\n", service.Name, st, service.BinaryPath())
+	case "uninstall":
+		if err := service.Uninstall(); err != nil {
+			return err
+		}
+		fmt.Printf("service %s removed (credentials in %s were kept)\n", service.Name, *dir)
+	case "status":
+		st, err := service.Query()
+		if err != nil {
+			return err
+		}
+		fmt.Println(st)
+	default:
+		return fmt.Errorf("unknown service action %q", args[0])
+	}
 	return nil
 }
 
@@ -157,12 +207,27 @@ func cmdRun(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	log := slog.New(slog.NewTextHandler(os.Stderr, nil)).With("component", "osriva-agent")
+	logOut := io.Writer(os.Stderr)
+	if service.IsService() {
+		// The Windows SCM discards stderr; log next to the credentials instead.
+		if f, err := os.OpenFile(filepath.Join(*dir, "agent.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			defer f.Close()
+			logOut = f
+		}
+	}
+	log := slog.New(slog.NewTextHandler(logOut, nil)).With("component", "osriva-agent")
+	if service.IsService() {
+		return service.RunService(func(ctx context.Context) error { return runLoop(ctx, log, *dir, false) })
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	return runLoop(ctx, log, *dir, *once)
+}
 
-	st, client, err := load(*dir)
+func runLoop(ctx context.Context, log *slog.Logger, dir string, once bool) error {
+	st, client, err := load(dir)
 	if err != nil {
+		log.Error("cannot start", "err", err)
 		return err
 	}
 	log.Info("agent starting", "version", version, "server_id", st.Config.ServerID, "endpoint", st.Config.AgentEndpoint)
@@ -170,15 +235,16 @@ func cmdRun(args []string) error {
 	backoff := 5 * time.Second
 	for {
 		next, err := cycle(ctx, log, st, &client)
-		if *once {
+		var ae *agentclient.APIError
+		if err != nil && errors.As(err, &ae) && ae.Code == "agent_forbidden" {
+			log.Error("the control plane rejected this agent's certificate; it was probably revoked", "err", err)
+			return fmt.Errorf("%w: %v", service.ErrRevoked, err)
+		}
+		if once {
 			return err
 		}
 		wait := next
 		if err != nil {
-			var ae *agentclient.APIError
-			if errors.As(err, &ae) && ae.Code == "agent_forbidden" {
-				return fmt.Errorf("the control plane rejected this agent's certificate (server revoked?): %w", err)
-			}
 			log.Warn("report failed", "err", err, "retry_in", backoff)
 			wait, backoff = backoff, min(backoff*2, 5*time.Minute)
 		} else {
