@@ -60,6 +60,7 @@ type Service struct {
 	panelURL string
 	agentURL string
 	limiter  *ratelimit.KeyedLimiter
+	keys     *secrets.Keyring
 
 	notify notifier
 
@@ -70,7 +71,7 @@ type Service struct {
 // New loads the internal CA, creating it on first start.
 func New(ctx context.Context, o Options) (*Service, error) {
 	s := &Service{store: o.Store, id: o.Identity, log: o.Log, panelURL: strings.TrimRight(o.PanelURL, "/"),
-		agentURL: strings.TrimRight(o.AgentURL, "/"), limiter: ratelimit.NewKeyed(0.2, 10)}
+		agentURL: strings.TrimRight(o.AgentURL, "/"), limiter: ratelimit.NewKeyed(0.2, 10), keys: o.Keys}
 	if s.log == nil {
 		s.log = slog.Default()
 	}

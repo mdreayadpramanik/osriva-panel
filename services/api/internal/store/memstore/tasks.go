@@ -35,6 +35,9 @@ func (s *Store) CreateTask(_ context.Context, t *store.Task) error {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now().UTC()
 	}
+	if t.RunTimeout == 0 {
+		t.RunTimeout = 5 * time.Minute
+	}
 	s.tasks[t.ID] = copyTask(t)
 	return nil
 }
@@ -108,7 +111,7 @@ func (s *Store) CompleteTask(_ context.Context, serverID, taskID string, status 
 	return nil
 }
 
-func (s *Store) ExpireTasks(_ context.Context, now, runningBefore time.Time) (int, error) {
+func (s *Store) ExpireTasks(_ context.Context, now time.Time) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
@@ -118,7 +121,7 @@ func (s *Store) ExpireTasks(_ context.Context, now, runningBefore time.Time) (in
 		case t.Status == store.TaskQueued && !now.Before(t.ExpiresAt):
 			t.Status, t.FinishedAt, t.Error = store.TaskExpired, &at, "not picked up by the agent in time"
 			n++
-		case t.Status == store.TaskRunning && t.StartedAt != nil && t.StartedAt.Before(runningBefore):
+		case t.Status == store.TaskRunning && t.StartedAt != nil && t.StartedAt.Add(runTimeout(t)).Before(now):
 			t.Status, t.FinishedAt, t.Error = store.TaskFailed, &at, "timeout: the agent did not report a result"
 			n++
 		}
@@ -181,4 +184,22 @@ func (s *Store) PruneMetrics(_ context.Context, before time.Time) (int, error) {
 		s.metrics[id] = kept
 	}
 	return n, nil
+}
+
+func runTimeout(t *store.Task) time.Duration {
+	if t.RunTimeout <= 0 {
+		return 5 * time.Minute
+	}
+	return t.RunTimeout
+}
+
+func (s *Store) RedactTaskParams(_ context.Context, taskID string, params json.RawMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[taskID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	t.Params = bytes.Clone(params)
+	return nil
 }

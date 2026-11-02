@@ -117,6 +117,7 @@ type AuditFilter struct {
 type Store interface {
 	ServerStore
 	TaskStore
+	AppStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -249,10 +250,12 @@ type Task struct {
 	RequestedBy *string
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
-	StartedAt   *time.Time
-	FinishedAt  *time.Time
-	Result      json.RawMessage
-	Error       string
+	// RunTimeout bounds how long the task may run once claimed (default 5 minutes).
+	RunTimeout time.Duration
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+	Result     json.RawMessage
+	Error      string
 }
 
 type MetricSample struct {
@@ -270,10 +273,59 @@ type TaskStore interface {
 	ClaimTasks(ctx context.Context, serverID string, now time.Time, limit int) ([]Task, error)
 	// CompleteTask records the outcome of a running task of serverID (ErrNotFound otherwise).
 	CompleteTask(ctx context.Context, serverID, taskID string, status TaskStatus, result json.RawMessage, errMsg string, now time.Time) error
-	// ExpireTasks expires queued tasks past their deadline and fails running tasks started before runningBefore.
-	ExpireTasks(ctx context.Context, now, runningBefore time.Time) (int, error)
+	// ExpireTasks expires queued tasks past their deadline and fails running tasks past their run timeout.
+	ExpireTasks(ctx context.Context, now time.Time) (int, error)
+	// RedactTaskParams replaces the stored parameters (used to drop secrets once a task has finished).
+	RedactTaskParams(ctx context.Context, taskID string, params json.RawMessage) error
 
 	InsertMetrics(ctx context.Context, samples []MetricSample) error
 	ListMetrics(ctx context.Context, serverID string, since time.Time, limit int) ([]MetricSample, error)
 	PruneMetrics(ctx context.Context, before time.Time) (int, error)
+}
+
+// ---- Applications and deployments (Phase 4b) ----
+
+type App struct {
+	ID            string
+	ServerID      string
+	Name          string
+	GitURL        string
+	GitRef        string
+	BuildMode     string
+	BuildContext  string
+	Dockerfile    string
+	ContainerPort int
+	HostPort      int
+	Public        bool
+	EnvEnc        []byte // encrypted JSON object; nil when there are no variables
+	CreatedBy     *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
+type Deployment struct {
+	ID         string
+	AppID      string
+	TaskID     *string
+	Kind       string // deploy | rollback
+	RollbackOf *string
+	Image      string
+	GitRef     string
+	CreatedBy  *string
+	CreatedAt  time.Time
+}
+
+// AppStore persists applications and their deployment history. Name and host
+// port are unique per server (ErrConflict).
+type AppStore interface {
+	CreateApp(ctx context.Context, a *App) error
+	GetApp(ctx context.Context, id string) (*App, error)
+	ListApps(ctx context.Context, serverID string) ([]App, error)
+	UpdateApp(ctx context.Context, a *App) error
+	DeleteApp(ctx context.Context, id string) error
+
+	CreateDeployment(ctx context.Context, d *Deployment) error
+	GetDeployment(ctx context.Context, id string) (*Deployment, error)
+	// ListDeployments returns an app's deployments, newest first.
+	ListDeployments(ctx context.Context, appID string, limit int) ([]Deployment, error)
 }

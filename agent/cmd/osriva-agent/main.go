@@ -24,12 +24,13 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/agent/internal/tasks"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentclient"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentproto"
+	"github.com/mdreayadpramanik/osriva-panel/pkg/agenttask"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/compat"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/inventory"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
-var version = "0.6.0-dev"
+var version = "0.7.0-dev"
 
 const usage = `OSRIVA Agent
 
@@ -353,33 +354,60 @@ func taskWorker(ctx context.Context, log *slog.Logger, h *clientHolder, revoked 
 		}
 		backoff = 5 * time.Second
 		for _, t := range list {
-			res := agentproto.TaskResult{Status: "succeeded"}
-			out, err := tasks.Execute(ctx, t.Type, t.Params)
-			if err == nil {
-				res.Result, err = json.Marshal(out)
+			if agenttask.LongRunning(t.Type) {
+				// Deployments run beside the loop, one at a time, so quick tasks are not held up.
+				go func() {
+					longMu.Lock()
+					defer longMu.Unlock()
+					if err := runTask(ctx, log, h, t); isRevoked(err) {
+						select {
+						case revoked <- err:
+						default:
+						}
+					}
+				}()
+				continue
 			}
-			if err != nil {
-				res = agentproto.TaskResult{Status: "failed", Error: err.Error()}
-			}
-			log.Info("task done", "task_id", t.ID, "type", t.Type, "status", res.Status)
-			for attempt := 0; attempt < 3; attempt++ {
-				cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-				err = h.get().SendResult(cctx, t.ID, res)
-				cancel()
-				if err == nil || isRevoked(err) || ctx.Err() != nil {
-					break
-				}
-				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
-			}
-			if isRevoked(err) {
+			if err := runTask(ctx, log, h, t); isRevoked(err) {
 				revoked <- err
 				return
 			}
-			if err != nil {
-				log.Warn("could not deliver task result", "task_id", t.ID, "err", err)
-			}
 		}
 	}
+}
+
+// longMu serialises long-running tasks such as deployments.
+var longMu sync.Mutex
+
+// runTask executes one task and delivers its result; it returns the delivery error.
+func runTask(ctx context.Context, log *slog.Logger, h *clientHolder, t agentproto.TaskEnvelope) error {
+	res := agentproto.TaskResult{Status: "succeeded"}
+	out, err := tasks.Execute(ctx, t.Type, t.Params)
+	if err == nil {
+		res.Result, err = json.Marshal(out)
+	}
+	if err != nil {
+		res = agentproto.TaskResult{Status: "failed", Error: err.Error()}
+		// Some failures carry a result too (for example deployment logs).
+		var re *tasks.ResultError
+		if errors.As(err, &re) {
+			res.Result, _ = json.Marshal(re.Result)
+		}
+	}
+	log.Info("task done", "task_id", t.ID, "type", t.Type, "status", res.Status)
+	for attempt := 0; attempt < 3; attempt++ {
+		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		err = h.get().SendResult(cctx, t.ID, res)
+		cancel()
+		if err == nil || isRevoked(err) || ctx.Err() != nil {
+			break
+		}
+		time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+	}
+	if err != nil && !isRevoked(err) {
+		log.Warn("could not deliver task result", "task_id", t.ID, "err", err)
+	}
+	return err
 }
 
 // cycle renews the certificate when due, then sends one report.

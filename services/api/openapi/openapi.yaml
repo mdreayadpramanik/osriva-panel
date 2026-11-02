@@ -58,6 +58,20 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
   schemas:
+    AppInput:
+      type: object
+      required: [name, git_url, git_ref, build_mode, container_port, host_port]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,39}$", description: "Immutable after creation" }
+        git_url: { type: string, description: "https:// or http:// URL without credentials (public repositories only)" }
+        git_ref: { type: string, description: "Branch or tag" }
+        build_mode: { type: string, enum: [dockerfile, static, node] }
+        build_context: { type: string, description: "Sub-directory of the repository" }
+        dockerfile: { type: string, description: "Relative to the context (dockerfile mode only)" }
+        container_port: { type: integer }
+        host_port: { type: integer, description: "Unique per server; bound to 127.0.0.1 unless public" }
+        public: { type: boolean }
+        env: { type: object, additionalProperties: { type: string }, description: "Stored encrypted; never returned" }
     Error:
       type: object
       required: [error]
@@ -629,8 +643,11 @@ paths:
         re-auth; params `{path}` or `{path, content, create?}`), confined by the agent's own policy.
         `users.list`, `cron.list`, `system.time`, `sshkeys.list` (servers.read);
         `sshkeys.add` / `sshkeys.remove` (servers.access + re-auth, params `{user, key}` / `{user, fingerprint}`);
-        `system.hostname` / `system.timezone` (servers.operate + re-auth). Queued tasks
-        expire after 2 minutes if the agent does not pick them up.
+        `system.hostname` / `system.timezone` (servers.operate + re-auth).
+        `docker.info|docker.containers|docker.container.logs|docker.images|docker.volumes|docker.networks` (servers.read);
+        `docker.container.action|docker.container.run|docker.image.pull|docker.image.remove|docker.images.prune`
+        (servers.operate; run/stop/remove/prune need re-auth). Deployments (`app.deploy`, `app.remove`) are
+        queued through the apps endpoints. Queued tasks expire after 2 minutes if the agent does not pick them up.
       requestBody:
         required: true
         content:
@@ -639,7 +656,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete, users.list, sshkeys.list, sshkeys.add, sshkeys.remove, cron.list, system.time, system.hostname, system.timezone] }
+                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete, users.list, sshkeys.list, sshkeys.add, sshkeys.remove, cron.list, system.time, system.hostname, system.timezone, docker.info, docker.containers, docker.container.action, docker.container.logs, docker.container.run, docker.images, docker.image.pull, docker.image.remove, docker.images.prune, docker.volumes, docker.networks] }
                 params: { type: object }
             example: { type: service.action, params: { name: nginx.service, action: restart } }
       responses:
@@ -658,6 +675,79 @@ paths:
         - { name: wait, in: query, schema: { type: integer, maximum: 25 } }
       responses:
         "200": { description: "Task: {id, type, params, status, result, error, created_at, started_at, finished_at}" }
+  /servers/{id}/apps:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [apps]
+      summary: Apps on a server with their live deployment (servers.read)
+      responses:
+        "200": { description: "`{apps: App[]}`; environment variable names only, never values" }
+    post:
+      tags: [apps]
+      summary: Create an app (servers.operate)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppInput" }
+      responses:
+        "201": { description: App }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /servers/{id}/apps/{appId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: appId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [apps]
+      summary: An app with its last 30 deployments (servers.read)
+      responses:
+        "200": { description: App }
+    put:
+      tags: [apps]
+      summary: Replace the app settings (servers.operate); omit `env` to keep the stored variables
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AppInput" }
+      responses:
+        "200": { description: App }
+    delete:
+      tags: [apps]
+      summary: Remove the app container and builds from the server and the app from the panel (servers.operate + re-auth)
+      responses:
+        "202": { description: "The queued `app.remove` task" }
+  /servers/{id}/apps/{appId}/deployments:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: appId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [apps]
+      summary: Deploy the configured branch or tag (servers.operate + re-auth)
+      responses:
+        "202": { description: "Deployment (status `queued`); poll it for the result" }
+  /servers/{id}/apps/{appId}/deployments/{depId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: appId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: depId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [apps]
+      summary: A deployment with its build and run log (servers.read)
+      responses:
+        "200": { description: "Deployment: {id, kind, image, git_ref, status, error, result: {commit, image, state, recovered, logs, duration_ms}}" }
+  /servers/{id}/apps/{appId}/deployments/{depId}/rollback:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: appId, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: depId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [apps]
+      summary: Run an earlier successful build again with the current settings (servers.operate + re-auth)
+      responses:
+        "202": { description: "Deployment of kind `rollback`" }
+        "409": { $ref: "#/components/responses/Error" }
   /servers/{id}/metrics:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:

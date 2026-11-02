@@ -21,7 +21,6 @@ import (
 
 const (
 	taskQueueTTL     = 2 * time.Minute
-	taskRunTimeout   = 5 * time.Minute
 	metricsRetention = 24 * time.Hour
 	maxTasksPerPoll  = 10
 )
@@ -80,7 +79,7 @@ func (s *Service) QueueTask(ctx context.Context, actor *identity.Principal, serv
 	}
 	now := s.id.Now()
 	t := &store.Task{ID: auth.NewID(), ServerID: x.ID, Type: typ, Params: params, RequestedBy: &actor.User.ID,
-		CreatedAt: now, ExpiresAt: now.Add(taskQueueTTL)}
+		CreatedAt: now, ExpiresAt: now.Add(taskQueueTTL), RunTimeout: agenttask.RunTimeout(typ)}
 	if err := s.store.CreateTask(ctx, t); err != nil {
 		return nil, err
 	}
@@ -95,6 +94,22 @@ func (s *Service) QueueTask(ctx context.Context, actor *identity.Principal, serv
 func RedactedParams(params json.RawMessage) map[string]any {
 	md := map[string]any{}
 	_ = json.Unmarshal(params, &md)
+	redactMap(md)
+	return md
+}
+
+// needsRedaction reports whether stored parameters hold secrets to drop once the task ends.
+func needsRedaction(params json.RawMessage) bool {
+	raw, _ := json.Marshal(RedactedParams(params))
+	var a, b any
+	_ = json.Unmarshal(params, &a)
+	_ = json.Unmarshal(raw, &b)
+	x, _ := json.Marshal(a)
+	y, _ := json.Marshal(b)
+	return string(x) != string(y)
+}
+
+func redactMap(md map[string]any) {
 	if c, ok := md["content"].(string); ok {
 		delete(md, "content")
 		md["content_bytes"] = len(c)
@@ -109,7 +124,11 @@ func RedactedParams(params json.RawMessage) map[string]any {
 		delete(md, "env")
 		md["env_names"] = names
 	}
-	return md
+	for _, v := range md {
+		if sub, ok := v.(map[string]any); ok {
+			redactMap(sub)
+		}
+	}
 }
 
 func (s *Service) taskInOrg(ctx context.Context, actor *identity.Principal, serverID, taskID string) (*store.Task, error) {
@@ -224,6 +243,14 @@ func (s *Service) CompleteTask(ctx context.Context, x *store.Server, taskID stri
 	md := map[string]any{"task_id": taskID, "status": r.Status}
 	if t != nil {
 		md["type"] = t.Type
+		// The agent has the secrets it needed; do not keep them at rest.
+		if needsRedaction(t.Params) {
+			if red, err := json.Marshal(RedactedParams(t.Params)); err == nil {
+				if err := s.store.RedactTaskParams(ctx, taskID, red); err != nil {
+					s.log.Warn("redact task params", "task_id", taskID, "err", err)
+				}
+			}
+		}
 	}
 	outcome := store.OutcomeSuccess
 	if status == store.TaskFailed {
@@ -286,7 +313,7 @@ func (s *Service) RunJanitor(ctx context.Context, every time.Duration) {
 	defer t.Stop()
 	for {
 		now := s.id.Now()
-		if n, err := s.store.ExpireTasks(ctx, now, now.Add(-taskRunTimeout)); err != nil {
+		if n, err := s.store.ExpireTasks(ctx, now); err != nil {
 			s.log.Warn("expire tasks", "err", err)
 		} else if n > 0 {
 			s.log.Info("expired agent tasks", "count", n)

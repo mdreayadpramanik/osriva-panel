@@ -280,3 +280,60 @@ export type DockerImage = { id: string; tags: string[]; size: number; created: s
 export type DockerVolume = { name: string; driver: string; mountpoint?: string };
 export type DockerNetwork = { id: string; name: string; driver: string; scope: string };
 export type DockerLogLine = { stream: string; time?: string; text: string };
+
+export type DeployResult = {
+  app: string;
+  image: string;
+  commit?: string;
+  container_id?: string;
+  state?: string;
+  recovered?: boolean;
+  logs: string;
+  duration_ms: number;
+};
+export type Deployment = {
+  id: string;
+  kind: "deploy" | "rollback";
+  rollback_of: string | null;
+  image: string;
+  git_ref: string;
+  task_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  status: TaskStatus;
+  started_at: string | null;
+  finished_at: string | null;
+  error: string;
+  result: DeployResult | null;
+};
+export type BuildMode = "dockerfile" | "static" | "node";
+export type App = {
+  id: string;
+  server_id: string;
+  name: string;
+  git_url: string;
+  git_ref: string;
+  build_mode: BuildMode;
+  build_context: string;
+  dockerfile: string;
+  container_port: number;
+  host_port: number;
+  public: boolean;
+  env_names: string[];
+  created_at: string;
+  updated_at: string;
+  current: Deployment | null;
+  deployments?: Deployment[];
+};
+export type AppInput = {
+  name: string;
+  git_url: string;
+  git_ref: string;
+  build_mode: BuildMode;
+  build_context: string;
+  dockerfile: string;
+  container_port: number;
+  host_port: number;
+  public: boolean;
+  env?: Record<string, string>;
+};

@@ -55,7 +55,8 @@ export function DockerPanel({ serverId, online }: { serverId: string; online: bo
   if (!info.available) {
     return (
       <EmptyState title="Docker is not available on this server">
-        {info.reason}. OSRIVA does not install Docker for you; install Docker Engine on the server, then refresh.
+        {info.reason}.{" "}
+        {!info.reason?.includes("not supported") && "OSRIVA does not install Docker for you; install Docker Engine on the server, then refresh."}
       </EmptyState>
     );
   }

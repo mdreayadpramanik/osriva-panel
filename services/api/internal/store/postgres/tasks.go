@@ -11,17 +11,19 @@ import (
 )
 
 const taskCols = `id::text, server_id::text, type, params, status, requested_by::text, created_at, expires_at,
-	started_at, finished_at, result, error`
+	started_at, finished_at, result, error, run_timeout_s`
 
 func scanTask(row pgx.Row) (*store.Task, error) {
 	var t store.Task
 	var status string
 	var params, result []byte
+	var timeoutS int
 	if err := row.Scan(&t.ID, &t.ServerID, &t.Type, &params, &status, &t.RequestedBy, &t.CreatedAt, &t.ExpiresAt,
-		&t.StartedAt, &t.FinishedAt, &result, &t.Error); err != nil {
+		&t.StartedAt, &t.FinishedAt, &result, &t.Error, &timeoutS); err != nil {
 		return nil, mapErr(err)
 	}
 	t.Status, t.Params, t.Result = store.TaskStatus(status), params, result
+	t.RunTimeout = time.Duration(timeoutS) * time.Second
 	return &t, nil
 }
 
@@ -53,9 +55,12 @@ func (s *Store) CreateTask(ctx context.Context, t *store.Task) error {
 	if len(params) == 0 {
 		params = []byte("{}")
 	}
-	err := s.pool.QueryRow(ctx, `INSERT INTO agent_tasks (id, server_id, type, params, status, requested_by, expires_at)
-		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7) RETURNING created_at`,
-		t.ID, t.ServerID, t.Type, string(params), string(t.Status), t.RequestedBy, t.ExpiresAt).Scan(&t.CreatedAt)
+	if t.RunTimeout <= 0 {
+		t.RunTimeout = 5 * time.Minute
+	}
+	err := s.pool.QueryRow(ctx, `INSERT INTO agent_tasks (id, server_id, type, params, status, requested_by, expires_at, run_timeout_s)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8) RETURNING created_at`,
+		t.ID, t.ServerID, t.Type, string(params), string(t.Status), t.RequestedBy, t.ExpiresAt, int(t.RunTimeout/time.Second)).Scan(&t.CreatedAt)
 	t.Params = params
 	return mapErr(err)
 }
@@ -107,7 +112,7 @@ func (s *Store) CompleteTask(ctx context.Context, serverID, taskID string, statu
 		taskID, serverID, string(status), jsonOrNil(result), errMsg, now)
 }
 
-func (s *Store) ExpireTasks(ctx context.Context, now, runningBefore time.Time) (int, error) {
+func (s *Store) ExpireTasks(ctx context.Context, now time.Time) (int, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		a, err := tx.Exec(ctx, `UPDATE agent_tasks SET status = 'expired', finished_at = $1,
@@ -118,7 +123,7 @@ func (s *Store) ExpireTasks(ctx context.Context, now, runningBefore time.Time) (
 		}
 		b, err := tx.Exec(ctx, `UPDATE agent_tasks SET status = 'failed', finished_at = $1,
 				error = 'timeout: the agent did not report a result'
-			WHERE status = 'running' AND started_at < $2`, now, runningBefore)
+			WHERE status = 'running' AND started_at + run_timeout_s * interval '1 second' < $1`, now)
 		if err != nil {
 			return err
 		}
@@ -179,4 +184,8 @@ func (s *Store) PruneMetrics(ctx context.Context, before time.Time) (int, error)
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+func (s *Store) RedactTaskParams(ctx context.Context, taskID string, params json.RawMessage) error {
+	return s.execOne(ctx, `UPDATE agent_tasks SET params = $2::jsonb WHERE id = $1`, taskID, string(params))
 }

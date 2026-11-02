@@ -26,6 +26,7 @@ var Types = map[string]bool{
 	HostnameSet: true, TimezoneSet: true,
 	DockerInfo: true, DockerContainers: true, DockerContainerAction: true, DockerContainerLogs: true, DockerContainerRun: true,
 	DockerImages: true, DockerImagePull: true, DockerImageRemove: true, DockerImagesPrune: true, DockerVolumes: true, DockerNetworks: true,
+	AppDeploy: true, AppRemove: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
@@ -112,6 +113,8 @@ func Validate(typ string, params json.RawMessage) error {
 	case DockerInfo, DockerContainers, DockerContainerAction, DockerContainerLogs, DockerContainerRun,
 		DockerImages, DockerImagePull, DockerImageRemove, DockerImagesPrune, DockerVolumes, DockerNetworks:
 		return validateDocker(typ, params)
+	case AppDeploy, AppRemove:
+		return validateApp(typ, params)
 	default:
 		return validateSystem(typ, params)
 	}

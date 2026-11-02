@@ -69,14 +69,18 @@ type dockerError struct {
 func (e *dockerError) Error() string { return fmt.Sprintf("docker: %s (HTTP %d)", e.Message, e.Status) }
 
 func (c *dockerClient) do(ctx context.Context, method, path string, q url.Values, body any) (*http.Response, error) {
-	var rd io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
-		}
-		rd = bytes.NewReader(b)
+	if body == nil {
+		return c.doRaw(ctx, method, path, q, nil, "")
 	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	return c.doRaw(ctx, method, path, q, bytes.NewReader(b), "application/json")
+}
+
+// doRaw sends an arbitrary body (for example a tar build context).
+func (c *dockerClient) doRaw(ctx context.Context, method, path string, q url.Values, rd io.Reader, contentType string) (*http.Response, error) {
 	u := c.base + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
@@ -85,8 +89,8 @@ func (c *dockerClient) do(ctx context.Context, method, path string, q url.Values
 	if err != nil {
 		return nil, err
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
@@ -235,9 +239,14 @@ func dockerContainers(ctx context.Context, c *dockerClient) ([]agenttask.Contain
 }
 
 type inspected struct {
-	ID     string
-	Name   string
-	State  struct{ Status string }
+	ID           string
+	Name         string
+	Image        string
+	RestartCount int
+	State        struct {
+		Status   string
+		ExitCode int
+	}
 	Config struct {
 		Tty    bool
 		Labels map[string]string
@@ -440,53 +449,7 @@ func dockerRun(ctx context.Context, c *dockerClient, p agenttask.ContainerRunPar
 	if err := guardVolumes(ctx, c, p.Volumes); err != nil {
 		return res, err
 	}
-	env := make([]string, 0, len(p.Env))
-	for k, v := range p.Env {
-		env = append(env, k+"="+v)
-	}
-	sort.Strings(env)
-	type binding struct{ HostIp, HostPort string }
-	exposed := map[string]struct{}{}
-	bindings := map[string][]binding{}
-	for _, m := range p.Ports {
-		proto := m.Protocol
-		if proto == "" {
-			proto = "tcp"
-		}
-		key := fmt.Sprintf("%d/%s", m.ContainerPort, proto)
-		ip := "127.0.0.1"
-		if m.Public {
-			ip = "0.0.0.0"
-		}
-		exposed[key] = struct{}{}
-		bindings[key] = append(bindings[key], binding{HostIp: ip, HostPort: strconv.Itoa(m.HostPort)})
-	}
-	type mount struct{ Type, Source, Target string }
-	mounts := make([]mount, 0, len(p.Volumes))
-	for _, v := range p.Volumes {
-		mounts = append(mounts, mount{Type: "volume", Source: v.Volume, Target: v.Target})
-	}
-	restart := p.Restart
-	if restart == "" {
-		restart = "no"
-	}
-	body := map[string]any{
-		"Image":        p.Image,
-		"Env":          env,
-		"ExposedPorts": exposed,
-		"Labels":       map[string]string{"dev.osriva.created-by": "osriva-agent"},
-		"HostConfig": map[string]any{
-			"PortBindings":  bindings,
-			"Mounts":        mounts,
-			"RestartPolicy": map[string]string{"Name": restart},
-			"Privileged":    false,
-			"NetworkMode":   "bridge",
-			"SecurityOpt":   []string{"no-new-privileges"},
-		},
-	}
-	if len(p.Command) > 0 {
-		body["Cmd"] = p.Command
-	}
+	body := containerBody(p.Image, p.Env, p.Ports, p.Volumes, p.Restart, map[string]string{"dev.osriva.created-by": "osriva-agent"}, p.Command)
 	q := url.Values{}
 	if p.Name != "" {
 		q.Set("name", p.Name)
@@ -593,4 +556,57 @@ func dockerNetworks(ctx context.Context, c *dockerClient) ([]agenttask.Network, 
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
+}
+
+// containerBody is the create request for every container the agent starts:
+// never privileged, bridge network, no-new-privileges, named volumes only and
+// ports on 127.0.0.1 unless marked public.
+func containerBody(image string, envMap map[string]string, ports []agenttask.PortMapping, vols []agenttask.VolumeMount, restart string, labels map[string]string, cmd []string) map[string]any {
+	env := make([]string, 0, len(envMap))
+	for k, v := range envMap {
+		env = append(env, k+"="+v)
+	}
+	sort.Strings(env)
+	type binding struct{ HostIp, HostPort string }
+	exposed := map[string]struct{}{}
+	bindings := map[string][]binding{}
+	for _, m := range ports {
+		proto := m.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		key := fmt.Sprintf("%d/%s", m.ContainerPort, proto)
+		ip := "127.0.0.1"
+		if m.Public {
+			ip = "0.0.0.0"
+		}
+		exposed[key] = struct{}{}
+		bindings[key] = append(bindings[key], binding{HostIp: ip, HostPort: strconv.Itoa(m.HostPort)})
+	}
+	type mount struct{ Type, Source, Target string }
+	mounts := make([]mount, 0, len(vols))
+	for _, v := range vols {
+		mounts = append(mounts, mount{Type: "volume", Source: v.Volume, Target: v.Target})
+	}
+	if restart == "" {
+		restart = "no"
+	}
+	body := map[string]any{
+		"Image":        image,
+		"Env":          env,
+		"ExposedPorts": exposed,
+		"Labels":       labels,
+		"HostConfig": map[string]any{
+			"PortBindings":  bindings,
+			"Mounts":        mounts,
+			"RestartPolicy": map[string]string{"Name": restart},
+			"Privileged":    false,
+			"NetworkMode":   "bridge",
+			"SecurityOpt":   []string{"no-new-privileges"},
+		},
+	}
+	if len(cmd) > 0 {
+		body["Cmd"] = cmd
+	}
+	return body
 }

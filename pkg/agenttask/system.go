@@ -40,6 +40,8 @@ func Class(typ string) string {
 		return ClassOperate
 	case dockerTask(typ) && !dockerReadOnly(typ):
 		return ClassOperate
+	case appTask(typ):
+		return ClassOperate
 	}
 	return ClassRead
 }
@@ -50,7 +52,7 @@ func NeedsReauth(typ string, params json.RawMessage) bool {
 		return dockerReauth(typ, params)
 	}
 	switch typ {
-	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet:
+	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove:
 		return true
 	case ServiceAction:
 		var p ServiceActionParams

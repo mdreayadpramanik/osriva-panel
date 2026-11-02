@@ -29,12 +29,18 @@ func Execute(ctx context.Context, typ string, params json.RawMessage) (any, erro
 	}
 	timeout := Timeout
 	if typ == agenttask.DockerImagePull || typ == agenttask.DockerContainerRun {
-		timeout = 4 * time.Minute // image downloads; the control plane allows 5 minutes
+		timeout = 4 * time.Minute // image downloads; the control plane allows 6 minutes
+	}
+	if typ == agenttask.AppDeploy {
+		timeout = agenttask.RunTimeout(typ) - 2*time.Minute // report before the control plane gives up
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	if strings.HasPrefix(typ, "docker.") {
 		return dockerTaskRun(ctx, typ, params)
+	}
+	if typ == agenttask.AppDeploy || typ == agenttask.AppRemove {
+		return appTaskRun(ctx, typ, params)
 	}
 	switch typ {
 	case agenttask.ServicesList:

@@ -199,6 +199,95 @@ task docker.image.remove '{"image":"postgres:17-alpine"}' | jq -e '.status == "f
 task docker.images.prune '{}' | jq -e '.status == "succeeded"' >/dev/null || fail "prune"
 sudo docker volume rm osriva-ci-data >/dev/null
 
+step "Deployments: Git (served over HTTP on loopback) → Docker build → swap, recover, rollback, remove"
+login # deployments need recent authentication
+GITDIR="$(mktemp -d)"
+gitc() { git -C "$GITDIR/work" -c user.name=ci -c user.email=ci@example.com "$@"; }
+publish() { # commit the work tree and refresh the bare repository served over dumb HTTP
+	gitc add -A && gitc commit -qm "$1" && gitc push -q origin main
+	git -C "$GITDIR/site.git" update-server-info
+}
+git init -q -b main "$GITDIR/work"
+mkdir -p "$GITDIR/work/site" "$GITDIR/work/api"
+echo '<h1>release v1</h1>' >"$GITDIR/work/site/index.html"
+cat >"$GITDIR/work/api/package.json" <<'JSON'
+{"name":"ci-api","version":"1.0.0","scripts":{"start":"node server.js"}}
+JSON
+echo 'require("http").createServer((q, r) => r.end("node ok " + process.env.PORT)).listen(process.env.PORT);' >"$GITDIR/work/api/server.js"
+gitc add -A && gitc commit -qm v1
+git clone -q --bare "$GITDIR/work" "$GITDIR/site.git"
+gitc remote add origin "$GITDIR/site.git"
+git -C "$GITDIR/site.git" update-server-info
+python3 -m http.server 18090 --bind 127.0.0.1 --directory "$GITDIR" >/dev/null 2>&1 &
+HTTP_PID=$!
+wait_for 10 "git HTTP server" curl -fsS -o /dev/null http://127.0.0.1:18090/site.git/info/refs || fail "git HTTP server"
+REPO_URL="http://127.0.0.1:18090/site.git"
+
+deploy_wait() { # deploy_wait APP_ID DEPLOYMENT_ID -> final deployment JSON
+	local d s i
+	for i in $(seq 1 120); do
+		d="$(api GET "/servers/$SERVER_ID/apps/$1/deployments/$2")"
+		s="$(jq -r .status <<<"$d")"
+		[ "$s" = queued ] || [ "$s" = running ] || break
+		sleep 5
+	done
+	echo "$d"
+}
+deploy() { # deploy APP_ID -> final deployment JSON
+	local id
+	id="$(api POST "/servers/$SERVER_ID/apps/$1/deployments" | jq -r .id)"
+	deploy_wait "$1" "$id"
+}
+
+SITE="$(api POST "/servers/$SERVER_ID/apps" "$(jq -nc --arg u "$REPO_URL" '{name:"site",git_url:$u,git_ref:"main",build_mode:"static",build_context:"site",container_port:80,host_port:18081,env:{CI_SECRET:"hunter5"}}')" | jq -r .id)"
+[ -n "$SITE" ] && [ "$SITE" != null ] || fail "create app"
+D1="$(deploy "$SITE")"
+jq -e --arg c "$(gitc rev-parse HEAD)" '.status == "succeeded" and .result.commit == $c and .result.state == "running" and (.result.logs | contains("building"))' <<<"$D1" >/dev/null || fail "first deployment: $D1"
+D1_ID="$(jq -r .id <<<"$D1")"
+curl -fsS http://127.0.0.1:18081/ | grep -q "release v1" || fail "v1 not served"
+[ "$(sudo docker inspect -f '{{.HostConfig.Privileged}} {{(index (index .HostConfig.PortBindings "80/tcp") 0).HostIp}} {{index .Config.Labels "dev.osriva.app"}}' osriva-app-site)" = "false 127.0.0.1 site" ] || fail "app container settings"
+
+echo '<h1>release v2</h1>' >"$GITDIR/work/site/index.html"
+publish v2
+deploy "$SITE" | jq -e '.status == "succeeded"' >/dev/null || fail "second deployment"
+curl -fsS http://127.0.0.1:18081/ | grep -q "release v2" || fail "v2 not served"
+[ "$(sudo docker ps -aq --filter label=dev.osriva.app=site | wc -l)" = 1 ] || fail "old container left behind"
+
+RB="$(api POST "/servers/$SERVER_ID/apps/$SITE/deployments/$D1_ID/rollback" | jq -r .id)"
+deploy_wait "$SITE" "$RB" | jq -e '.status == "succeeded" and .kind == "rollback"' >/dev/null || fail "rollback"
+curl -fsS http://127.0.0.1:18081/ | grep -q "release v1" || fail "rollback did not bring v1 back"
+
+step "Deployments: Node.js runtime; a crashing release and a broken build keep the running version"
+API_APP="$(api POST "/servers/$SERVER_ID/apps" "$(jq -nc --arg u "$REPO_URL" '{name:"api",git_url:$u,git_ref:"main",build_mode:"node",build_context:"api",container_port:3000,host_port:18082}')" | jq -r .id)"
+deploy "$API_APP" | jq -e '.status == "succeeded"' >/dev/null || fail "node deployment"
+curl -fsS http://127.0.0.1:18082/ | grep -qx "node ok 3000" || fail "node app not served (PORT default)"
+echo 'process.exit(1);' >"$GITDIR/work/api/server.js"
+publish crash
+CRASH="$(deploy "$API_APP")"
+jq -e '.status == "failed" and .result.recovered == true and (.result.logs | contains("previous version"))' <<<"$CRASH" >/dev/null || fail "crashing release: $CRASH"
+curl -fsS http://127.0.0.1:18082/ | grep -q "node ok" || fail "previous version not restored"
+cat >"$GITDIR/work/api/package.json" <<'JSON'
+{"name":"ci-api","version":"1.0.0","scripts":{"start":"node server.js"},"dependencies":{"osriva-ci-package-that-does-not-exist":"9.9.9"}}
+JSON
+publish broken-build
+BROKEN="$(deploy "$API_APP")"
+jq -e '.status == "failed" and (.error | contains("build failed")) and (.result.recovered | not)' <<<"$BROKEN" >/dev/null || fail "broken build: $BROKEN"
+curl -fsS http://127.0.0.1:18082/ | grep -q "node ok" || fail "running version touched by a failed build"
+
+step "Deployments: secrets are encrypted and not kept in task records; delete removes everything"
+pg() { sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml exec -T postgres psql -U osriva -d osriva -tAc "$1"; }
+[ "$(pg "SELECT count(*) FROM agent_tasks WHERE params::text LIKE '%hunter5%'")" = 0 ] || fail "secret kept in agent_tasks"
+[ "$(pg "SELECT count(*) FROM apps WHERE env_enc IS NOT NULL AND position('hunter5'::bytea in env_enc) > 0")" = 0 ] || fail "secret stored in clear"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE metadata::text LIKE '%hunter5%'")" = 0 ] || fail "secret in the audit log"
+for app in "$SITE" "$API_APP"; do
+	RM="$(api DELETE "/servers/$SERVER_ID/apps/$app" | jq -r .id)"
+	t="$(api GET "/servers/$SERVER_ID/tasks/$RM?wait=20")"
+	jq -e '.status == "succeeded" and .result.container_removed == true and .result.images_removed > 0' <<<"$t" >/dev/null || fail "app.remove: $t"
+done
+[ -z "$(sudo docker ps -aq --filter label=dev.osriva.app)" ] || fail "app containers left"
+[ -z "$(sudo docker images -q --filter label=dev.osriva.app)" ] || fail "app images left"
+kill "$HTTP_PID"
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

@@ -27,13 +27,15 @@ type Store struct {
 	settings    map[string]json.RawMessage
 	nextAudit   int64
 
-	caCert    string
-	caKey     []byte
-	servers   map[string]*store.Server
-	certs     map[string]*store.AgentCertificate // by serial
-	inventory map[string]*store.ServerInventory  // by server ID
-	tasks     map[string]*store.Task
-	metrics   map[string][]store.MetricSample // by server ID, sorted by TS
+	caCert      string
+	caKey       []byte
+	servers     map[string]*store.Server
+	certs       map[string]*store.AgentCertificate // by serial
+	inventory   map[string]*store.ServerInventory  // by server ID
+	tasks       map[string]*store.Task
+	metrics     map[string][]store.MetricSample // by server ID, sorted by TS
+	apps        map[string]*store.App
+	deployments map[string]*store.Deployment
 }
 
 var _ store.Store = (*Store)(nil)
@@ -45,7 +47,7 @@ func New() *Store {
 		sessions: map[string]*store.Session{}, settings: map[string]json.RawMessage{},
 		servers: map[string]*store.Server{}, certs: map[string]*store.AgentCertificate{},
 		inventory: map[string]*store.ServerInventory{}, tasks: map[string]*store.Task{},
-		metrics: map[string][]store.MetricSample{},
+		metrics: map[string][]store.MetricSample{}, apps: map[string]*store.App{}, deployments: map[string]*store.Deployment{},
 	}
 }
 

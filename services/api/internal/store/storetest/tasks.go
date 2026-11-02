@@ -75,9 +75,20 @@ func testTaskQueue(t *testing.T, s store.Store) {
 		t.Fatalf("failed task: %+v", failed)
 	}
 
-	// t3 is running and started at `now`; the expired one is still queued.
-	n, err := s.ExpireTasks(ctx(), now.Add(time.Minute), now.Add(time.Second))
-	if err != nil || n != 2 {
+	// A long task (20 min run timeout) survives the 5-minute default.
+	long := &store.Task{ID: auth.NewID(), ServerID: a.ID, Type: "app.deploy", ExpiresAt: now.Add(time.Hour), RunTimeout: 20 * time.Minute}
+	if err := s.CreateTask(ctx(), long); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.ClaimTasks(ctx(), a.ID, now, 10); len(c) != 1 || c[0].RunTimeout != 20*time.Minute {
+		t.Fatalf("claim long task: %+v", c)
+	}
+	if n, err := s.ExpireTasks(ctx(), now.Add(time.Minute)); err != nil || n != 1 {
+		t.Fatalf("after 1 min only the unclaimed expired task goes: %d %v", n, err)
+	}
+	// t3 (5 min default) is now past its run timeout; the long task is not.
+	n, err := s.ExpireTasks(ctx(), now.Add(6*time.Minute))
+	if err != nil || n != 1 {
 		t.Fatalf("ExpireTasks = %d, %v (want expired + timed-out)", n, err)
 	}
 	if x, _ := s.GetTask(ctx(), expired.ID); x.Status != store.TaskExpired || x.FinishedAt == nil {
@@ -87,8 +98,18 @@ func testTaskQueue(t *testing.T, s store.Store) {
 		t.Fatalf("timed out: %+v", x)
 	}
 
+	if x, _ := s.GetTask(ctx(), long.ID); x.Status != store.TaskRunning {
+		t.Fatalf("long task expired early: %+v", x)
+	}
+	if err := s.RedactTaskParams(ctx(), t1.ID, json.RawMessage(`{"env_names":["A"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if x, _ := s.GetTask(ctx(), t1.ID); string(x.Params) != `{"env_names": ["A"]}` && string(x.Params) != `{"env_names":["A"]}` {
+		t.Fatalf("redacted params: %s", x.Params)
+	}
+
 	list, _ := s.ListTasks(ctx(), a.ID, 2)
-	if len(list) != 2 || list[0].ID != expired.ID {
+	if len(list) != 2 || list[0].ID != long.ID {
 		t.Fatalf("ListTasks newest first with limit: %+v", list)
 	}
 }
