@@ -53,18 +53,19 @@
 - [x] Service management via systemd and Windows SCM; process list (Linux, Windows)
 - [ ] OpenRC and BSD service/process adapters; BSD metrics
 
-## Phase 3b: Server management, continued (next)
+## Phase 3b: Server management, continued (done)
 
 - [x] System and service logs (journald / Windows Event Log), bounded and filtered (CI run 41494257938)
-- [ ] Users and groups, SSH authorized keys (dangerous changes behind re-auth)
-- [ ] Scheduled tasks (cron / Task Scheduler), hostname, timezone
+- [x] Users and groups (view); SSH authorized keys add/remove on Linux, behind servers.access + re-auth (CI run 41497711910)
+- [x] Scheduled tasks (cron / Task Scheduler, view); hostname and timezone (CI run 41497711910)
 - [x] File manager with agent-side path confinement: list, view, edit, create, delete (CI run 41494257938)
+- [ ] User/group create, delete, password and group changes
+- [ ] Editing cron entries / scheduled tasks
 - [ ] File upload/download of large or binary files, rename, chmod/chown
 - [ ] Disk I/O metrics; downsampled charts for long windows
 
-## Phases 3–14 (summary; expanded when each phase starts)
+## Phases 4–14 (summary; expanded when each phase starts)
 
-3. Live server dashboard (metrics from the agent), services, users/groups, SSH keys, logs, processes, cron, file manager with path confinement
 4. Docker manager via the agent, Git/ZIP/Dockerfile/Compose deployments, runtime adapters, build logs, rollback
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters
 6. CMS catalog + adapters (WordPress via WP-CLI first), staging/clone/migrate, verified downloads

@@ -66,6 +66,18 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Windows 11 | SUPPORTED | SUPPORTED | Real agent (unprivileged) on 2026-11-02. |
 | BSD | UNSUPPORTED | NOT_TESTED | No log backend; files use portable code. |
 
+### Users, SSH keys, scheduled tasks, hostname, timezone (Phase 3b-2)
+
+"System tests run 41497711910" is the `System tests` workflow at commit `e24f883` (2026-11-03).
+
+| Platform | Users (view) | SSH keys | Scheduled tasks (view) | Hostname / timezone | Evidence / notes |
+|----------|--------------|----------|------------------------|---------------------|------------------|
+| Ubuntu 24.04 (systemd) | SUPPORTED | SUPPORTED | SUPPORTED (cron) | SUPPORTED / SUPPORTED | System tests run 41497711910, agent as root. |
+| Other systemd distributions | NOT_TESTED | NOT_TESTED | NOT_TESTED | NOT_TESTED | Same `/etc/passwd`, `hostnamectl`, `timedatectl` paths; RHEL cron spool `/var/spool/cron` handled but untested. |
+| Windows Server 2022 | SUPPORTED | UNSUPPORTED | SUPPORTED (Task Scheduler) | UNSUPPORTED / SUPPORTED | System tests run 41497711910, agent as LocalSystem. Renaming needs a reboot and is not offered. |
+| Windows 11 | SUPPORTED | UNSUPPORTED | SUPPORTED | UNSUPPORTED / NOT_TESTED | Real agent unprivileged (view only). |
+| BSD | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | No adapters yet. |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4–11).

@@ -626,7 +626,10 @@ paths:
         start|stop|restart|enable|disable; stop/disable need re-auth).
         `logs.read` (servers.read, params `{source: system|application|service, service?, lines?, min_level?}`).
         `files.list|files.read|files.write|files.mkdir|files.delete` (servers.files; writes need
-        re-auth; params `{path}` or `{path, content, create?}`), confined by the agent's own policy. Queued tasks
+        re-auth; params `{path}` or `{path, content, create?}`), confined by the agent's own policy.
+        `users.list`, `cron.list`, `system.time`, `sshkeys.list` (servers.read);
+        `sshkeys.add` / `sshkeys.remove` (servers.access + re-auth, params `{user, key}` / `{user, fingerprint}`);
+        `system.hostname` / `system.timezone` (servers.operate + re-auth). Queued tasks
         expire after 2 minutes if the agent does not pick them up.
       requestBody:
         required: true
@@ -636,7 +639,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete] }
+                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete, users.list, sshkeys.list, sshkeys.add, sshkeys.remove, cron.list, system.time, system.hostname, system.timezone] }
                 params: { type: object }
             example: { type: service.action, params: { name: nginx.service, action: restart } }
       responses:

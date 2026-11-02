@@ -1,10 +1,34 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-02** · Current phase: **3b-1 (logs, file manager) done** · Next: **Phase 3b-2 (users, SSH keys, cron, hostname)**
+Last updated: **2026-11-03** · Current phase: **3 (server management) done** · Next: **Phase 4 (applications: Docker, deployments, runtimes)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories. Users, SSH keys and cron cannot be managed yet.
+inside each agent's allowed directories, manage SSH keys, and view users, scheduled tasks, host name and timezone.
+
+## Phase 3b-2 report (users, SSH keys, scheduled tasks, hostname, timezone)
+
+Evidence: `System tests` run 41497711910 (commit `e24f883`, 2026-11-03, both jobs passed)
+plus a real agent on Windows 11. The first run (41496590486) failed and found a real
+bug: the systemd unit's `ProtectHome=read-only` blocked writing SSH keys; it was removed.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| `users.list`: `/etc/passwd` + `/etc/group`; Windows local users and groups | Ubuntu CI, Windows Server 2022 CI, Windows 11 |
+| `sshkeys.list/add/remove` (Linux): strict key parsing (no options, RSA ≥ 2048), other lines preserved, `~/.ssh` 0700 and `authorized_keys` 0600 owned by the user | unit tests; Ubuntu CI as root: a real key added, listed and removed for a new user, owner/mode checked, key with `command=` refused |
+| Symlink defence: a planted `authorized_keys -> /etc/shadow` is refused and `/etc/shadow` stays unchanged | Ubuntu CI |
+| `cron.list`: `/etc/crontab`, `/etc/cron.d`, user crontabs; Windows Task Scheduler (built-in tasks hidden) | unit tests; Ubuntu CI (`/etc/cron.d` entry found with user and schedule); Windows CI; Windows 11 |
+| `system.time`, `system.hostname` (hostnamectl), `system.timezone` (timedatectl / tzutil, validated against the tz database / `tzutil /l`) | Ubuntu CI: timezone and hostname changed, confirmed, restored, unknown zone refused; Windows CI: timezone changed and restored |
+| Permission classes shared by panel and agent; `servers.access` for SSH keys; re-auth for every change | unit + e2e tests |
+| Dashboard System tab | `tsc`; browser with a real agent on Windows 11 |
+
+### Limitations
+
+* No user/group creation, deletion or password changes (deliberately deferred: easy to lock yourself out).
+* SSH keys on Windows (OpenSSH `administrators_authorized_keys`): unsupported.
+* Scheduled tasks are view only; renaming a Windows computer is unsupported (needs a reboot).
 
 ## Phase 3b-1 report (logs and file manager)
 
@@ -142,5 +166,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 2b | Installer, agent service, one-line installers | ✅ Done (caveats above) |
 | 3a | Typed agent tasks, live metrics, services, processes | ✅ Done |
 | 3b-1 | Logs, confined file manager | ✅ Done |
-| 3b-2 | Users / groups, SSH keys, cron, hostname / timezone | ⏭ Next |
-| 4–14 | See [TASKS.md](TASKS.md) | Not started |
+| 3b-2 | Users / groups (view), SSH keys, scheduled tasks (view), hostname / timezone | ✅ Done |
+| 4 | Docker, deployments, runtimes | ⏭ Next |
+| 5–14 | See [TASKS.md](TASKS.md) | Not started |
