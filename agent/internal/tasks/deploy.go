@@ -151,12 +151,26 @@ func gitFetch(ctx context.Context, log *deployLog, s agenttask.GitSource, dest s
 		}
 		log.write(string(out))
 		if err != nil {
-			return "", fmt.Errorf("git %s: %w", args[len(args)-1], err)
+			return string(out), fmt.Errorf("git %s: %w", args[len(args)-1], err)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}
-	if _, err := gitRun("-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.http.allow=always",
-		"clone", "--quiet", "--depth", "1", "--single-branch", "--no-tags", "--branch", s.Ref, "--", s.URL, dest); err != nil {
+	clone := func(shallow bool) (string, error) {
+		args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.http.allow=always",
+			"clone", "--quiet", "--single-branch", "--no-tags", "--branch", s.Ref}
+		if shallow {
+			args = append(args, "--depth", "1")
+		}
+		return gitRun(append(args, "--", s.URL, dest)...)
+	}
+	out, err := clone(true)
+	if err != nil && strings.Contains(out, "does not support shallow") {
+		// Plain ("dumb") HTTP servers cannot serve shallow clones.
+		log.step("the server does not support shallow clones; fetching the full history")
+		_ = os.RemoveAll(dest)
+		_, err = clone(false)
+	}
+	if err != nil {
 		return "", errors.New("could not fetch the repository: check the URL and the branch or tag (private repositories are not supported yet)")
 	}
 	return gitRun("-C", dest, "rev-parse", "HEAD")

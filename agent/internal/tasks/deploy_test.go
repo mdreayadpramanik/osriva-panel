@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -349,5 +350,44 @@ func TestDeployLogKeepsTail(t *testing.T) {
 	s := l.String()
 	if !strings.HasPrefix(s, "[earlier output truncated]") || !strings.HasSuffix(s, "END") || len(l.b) != agenttask.MaxDeployLogBytes {
 		t.Fatalf("log tail: len=%d", len(l.b))
+	}
+}
+
+// TestGitFetchDumbHTTP runs the real git client against a plain static HTTP
+// server, which cannot serve shallow clones.
+func TestGitFetchDumbHTTP(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	work := filepath.Join(dir, "work")
+	run("init", "-q", "-b", "main", work)
+	writeFile(t, filepath.Join(work, "index.html"), "hi")
+	run("-C", work, "add", "-A")
+	run("-C", work, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "v1")
+	run("clone", "-q", "--bare", work, filepath.Join(dir, "site.git"))
+	run("-C", filepath.Join(dir, "site.git"), "update-server-info")
+	srv := httptest.NewServer(http.FileServer(http.Dir(dir)))
+	defer srv.Close()
+
+	log := &deployLog{}
+	dest := filepath.Join(t.TempDir(), "src")
+	commit, err := gitFetch(context.Background(), log, agenttask.GitSource{URL: srv.URL + "/site.git", Ref: "main"}, dest)
+	if err != nil || commit != run("-C", work, "rev-parse", "HEAD") {
+		t.Fatalf("fetch: %q %v\n%s", commit, err, log.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(dest, "index.html")); string(b) != "hi" {
+		t.Fatal("checkout content")
+	}
+	if _, err := gitFetch(context.Background(), &deployLog{}, agenttask.GitSource{URL: srv.URL + "/site.git", Ref: "nope"}, filepath.Join(t.TempDir(), "x")); err == nil {
+		t.Fatal("unknown branch must fail")
 	}
 }
