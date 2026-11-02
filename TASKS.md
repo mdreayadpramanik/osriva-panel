@@ -64,9 +64,21 @@
 - [ ] File upload/download of large or binary files, rename, chmod/chown
 - [ ] Disk I/O metrics; downsampled charts for long windows
 
-## Phases 4–14 (summary; expanded when each phase starts)
+## Phase 4a: Docker manager (done)
 
-4. Docker manager via the agent, Git/ZIP/Dockerfile/Compose deployments, runtime adapters, build logs, rollback
+- [x] Docker Engine API over the local socket; containers list/start/stop/restart/remove/logs (CI run 41500727424)
+- [x] Safe `docker run`: named volumes only, loopback ports by default, no privileged/host network; control-plane protection (CI run 41500727424)
+- [x] Images pull/remove/prune, volumes and networks (view); Docker tab in the dashboard
+- [ ] Docker on Windows (named pipe); rootless Docker and Podman verified
+- [ ] Container stats (CPU/memory per container), exec console, volume/network create and delete
+
+## Phase 4b: Deployments (next)
+
+- [ ] Git / ZIP / Dockerfile / Compose deployments with build logs, history and rollback
+- [ ] Runtime adapters (Node.js, PHP, Python, Go, static sites)
+
+## Phases 5–14 (summary; expanded when each phase starts)
+
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters
 6. CMS catalog + adapters (WordPress via WP-CLI first), staging/clone/migrate, verified downloads
 7. Database engines, storage, encrypted and verified backups/restores

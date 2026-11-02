@@ -1,10 +1,37 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **3 (server management) done** · Next: **Phase 4 (applications: Docker, deployments, runtimes)**
+Last updated: **2026-11-03** · Current phase: **4a (Docker manager) done** · Next: **Phase 4b (deployments, runtimes)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, and view users, scheduled tasks, host name and timezone.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, and manage Docker containers and images.
+
+## Phase 4a report (Docker manager)
+
+Design: [ADR-0006](docs/adr/0006-docker-manager.md). Evidence: `System tests` run 41500727424
+(commit `cd7c45e`, 2026-11-03): agent as root on Ubuntu 24.04, next to the real OSRIVA control plane in Docker.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| `docker.info` (version, counts, driver); honest "unavailable" result when there is no socket or on Windows | unit tests; Ubuntu CI; Windows Server 2022 CI (reported unsupported) |
+| Containers: list (state, ports, Compose project), start/stop/restart, remove (no force), logs (multiplexed stream decoded, stdout/stderr, timestamps) | unit tests against a fake Engine API; Ubuntu CI with nginx |
+| `docker.container.run`: image, name, command, env, ports, named volumes, restart policy; missing images pulled with an explicit tag | unit tests; Ubuntu CI: port bound to 127.0.0.1, `Privileged=false`, bridge, `no-new-privileges` confirmed with `docker inspect`, page served on loopback |
+| Refusals: privileged / host network / host path rejected by the API; OSRIVA API container stop/restart/remove refused and still running; `osriva_postgres-data` mount refused; running container removal and in-use image removal refused | unit tests; Ubuntu CI |
+| Images pull/list/remove/prune (dangling only); volumes and networks listed | Ubuntu CI |
+| Env values replaced by names in task lists and audit; re-auth for run/stop/remove/prune | unit tests; Ubuntu CI checks the secret never appears in the task list |
+| Dashboard Docker tab (containers, logs, run dialog, images, volumes, networks) | `tsc`. **Not clicked through in a browser yet**: the local dev agent is on Windows, where Docker is unsupported. |
+
+### Limitations
+
+* Docker on Windows (named pipe), rootless Docker and Podman: not supported or not tested.
+* No per-container CPU/memory stats, exec console, or volume/network create/delete yet.
+* Compose projects are shown but cannot be deployed: that is Phase 4b.
+
+### Security notes
+
+* Docker access is root-equivalent. OSRIVA removes the obvious escapes, but `servers.operate` still allows running any image.
 
 ## Phase 3b-2 report (users, SSH keys, scheduled tasks, hostname, timezone)
 
@@ -167,5 +194,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 3a | Typed agent tasks, live metrics, services, processes | ✅ Done |
 | 3b-1 | Logs, confined file manager | ✅ Done |
 | 3b-2 | Users / groups (view), SSH keys, scheduled tasks (view), hostname / timezone | ✅ Done |
-| 4 | Docker, deployments, runtimes | ⏭ Next |
+| 4a | Docker manager (containers, images, volumes, networks) | ✅ Done |
+| 4b | Deployments (Git, ZIP, Dockerfile, Compose), runtimes, rollback | ⏭ Next |
 | 5–14 | See [TASKS.md](TASKS.md) | Not started |

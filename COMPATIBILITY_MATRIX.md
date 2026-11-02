@@ -7,7 +7,7 @@ Statuses: `SUPPORTED` (implemented **and** tested) · `PARTIALLY_SUPPORTED` ·
 A row moves to `SUPPORTED` only with a test run recorded in the "Evidence" column.
 "System tests run 41463687791" is the `System tests` workflow at commit `bd4052d`
 (2026-11-02) on disposable GitHub Actions machines.
-Last updated: 2026-11-02 (Phase 2b).
+Last updated: 2026-11-03 (Phase 4a).
 
 ## Control plane (installer, Core API, dashboard)
 
@@ -78,6 +78,18 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Windows 11 | SUPPORTED | UNSUPPORTED | SUPPORTED | UNSUPPORTED / NOT_TESTED | Real agent unprivileged (view only). |
 | BSD | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | No adapters yet. |
 
+## Docker manager (Phase 4a)
+
+"System tests run 41500727424" is the `System tests` workflow at commit `cd7c45e` (2026-11-03).
+
+| Platform | Docker manager | Evidence / notes |
+|----------|----------------|------------------|
+| Ubuntu 24.04, Docker Engine (GitHub runner) | SUPPORTED | System tests run 41500727424, agent as root next to the OSRIVA control plane: info, list, run nginx (loopback port, named volume), logs, stop/start/remove, pull/remove/prune images; control-plane containers and volume refused. |
+| Other Linux with Docker Engine ≥ 20.10 (API v1.41) | NOT_TESTED | Same Unix-socket API code. |
+| Rootless Docker, Podman (Docker-compatible socket) | NOT_TESTED | Set `DOCKER_HOST=unix://…` for the agent service; never run. |
+| Windows (Docker Desktop / named pipe) | UNSUPPORTED | `docker.info` reports "not supported" (checked in CI on Windows Server 2022). |
+| BSD | UNSUPPORTED | No Docker Engine. |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
-None are integrated yet. Each one is added here as its adapter lands (Phases 4–11).
+None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).

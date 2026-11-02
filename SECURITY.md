@@ -39,6 +39,7 @@ a security contact address and a PGP key.)*
 | Least privilege (Windows) | Service listing opens the SCM with connect/enumerate rights only; actions request only start/stop/query/change-config rights | `tasks_windows.go` |
 | Agent service | systemd unit with `NoNewPrivileges`, `PrivateTmp`, kernel protections, `UMask=0077` (`/home` stays writable because SSH key management needs it); credential dir 0700 (Unix) or a protected DACL for SYSTEM and Administrators (Windows); revoked agents exit with code 3 and are not restarted | `agent/internal/service`, `agent/internal/state` |
 | Agent distribution | Builds served only from a fixed allow-list of file names (no path traversal), SHA-256 checked by the one-line installers, scripts quote every interpolated value | `internal/agentdist` |
+| Docker | Agent uses the local Engine API socket only (never exposed). `docker.container.run` has no privileged / host-network / capability / device / bind-mount fields (strict decoding rejects them); agent forces `Privileged=false`, bridge network, `no-new-privileges`; ports bind to 127.0.0.1 unless marked public; OSRIVA's own containers (label `dev.osriva.control-plane`) cannot be stopped or removed and their volumes cannot be mounted; no forced removal; env values redacted from task lists and audit; re-auth for run/stop/remove/prune | `pkg/agenttask/docker.go`, `agent/internal/tasks/docker.go`, ADR-0006 |
 | Installer | `plan` changes nothing; every change needs confirmation (or `--yes`); secrets generated locally into a 0600 file; verified database backup before upgrades with automatic rollback; `--purge` requires a typed confirmation; never touches firewall, SSH, disk or network settings | `installer/osriva-install.sh` |
 
 ## Known limitations and risks
@@ -57,6 +58,7 @@ a security contact address and a PGP key.)*
 * The PostgreSQL store passes the shared contract suite in CI only. It has not
   been run on the development machine (no PostgreSQL there).
 * No external security audit has been performed (planned for Phase 14).
+* **Docker access is root-equivalent.** OSRIVA blocks the obvious escapes (privileged mode, host paths, host network), but anyone with `servers.operate` can still run any image, including a malicious one, inside Docker's default isolation. Grant `servers.operate` accordingly.
 
 ## Dangerous-operation policy (applies to all future phases)
 
