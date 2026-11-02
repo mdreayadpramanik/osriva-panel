@@ -8,12 +8,13 @@ websites, CMSs, applications and hosting infrastructure from the browser. It has
 operating modes, **Personal Server Mode** and **Hosting Provider Mode**, plus a separate
 **Customer Panel**. It has no paid editions, no license keys and no billing.
 
-> **Status: early development (Phase 2 of 14 done).** What works today: authentication,
+> **Status: early development (Phase 3a of 14 done).** What works today: authentication,
 > sessions, TOTP two-factor, role-based access control, user management, the audit log,
 > panel settings, a **Linux installer** (with upgrade and rollback), and **connecting servers**:
 > a one-line command installs the OSRIVA Agent as a service; it enrols securely and reports
 > each server's real OS, hardware, storage and network, plus a compatibility assessment.
-> Managing servers (services, files, deployment, CMS, Docker, backups, monitoring) and
+> **Live metrics**, the **process list** and **service control** (systemd, Windows) work too.
+> Files, logs, users, deployment, CMS, Docker, backups, alerting and
 > provider features **do not exist yet**. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
 > OSRIVA Panel is **not production-ready**.
 

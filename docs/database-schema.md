@@ -39,7 +39,9 @@ Implemented as: `agent_ca` (single row, encrypted key), `servers` (status pendin
 | `server_capabilities` | server_id, capability_key, status (enum of 6 statuses), reason, detected_at |
 | `agent_tasks` | id, server_id, type, params jsonb, status, requested_by, exit_code, output_ref, created_at, finished_at |
 
-## Monitoring & alerts — 🗓 Phases 3 and 8
+## Monitoring & alerts — partly ✅ `0003_agent_tasks_metrics.sql`
+
+Implemented: `agent_tasks` (typed task queue with lifecycle and results) and `metric_samples` (raw samples, 24 h). Planned for Phase 8:
 
 `metric_samples` (server_id, ts, cpu, mem, disk, net — time-partitioned),
 `alert_rules`, `alerts`, `notification_channels`, `notification_deliveries`.

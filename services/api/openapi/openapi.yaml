@@ -607,3 +607,57 @@ paths:
       security: []
       responses:
         "200": { description: PowerShell script }
+  /servers/{id}/tasks:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [servers]
+      summary: Recent tasks of a server, newest first (servers.read)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses:
+        "200": { description: "`{tasks: Task[]}` (results omitted; fetch a task for its result)" }
+    post:
+      tags: [servers]
+      summary: Queue a typed task for the agent
+      description: |
+        Allowed types (closed list, validated again by the agent):
+        `services.list` and `processes.list` (servers.read, params `{}`), and
+        `service.action` (servers.operate, params `{name, action}` with action
+        start|stop|restart|enable|disable; stop/disable need re-auth). Queued tasks
+        expire after 2 minutes if the agent does not pick them up.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string, enum: [services.list, service.action, processes.list] }
+                params: { type: object }
+            example: { type: service.action, params: { name: nginx.service, action: restart } }
+      responses:
+        "202": { description: "Task (status `queued`)" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /servers/{id}/tasks/{taskId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: taskId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [servers]
+      summary: A task with its result; `wait` (0-25 s) holds the request until it finishes
+      parameters:
+        - { name: wait, in: query, schema: { type: integer, maximum: 25 } }
+      responses:
+        "200": { description: "Task: {id, type, params, status, result, error, created_at, started_at, finished_at}" }
+  /servers/{id}/metrics:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [servers]
+      summary: Live metric samples (servers.read); values a platform cannot provide are omitted
+      parameters:
+        - { name: minutes, in: query, schema: { type: integer, maximum: 1440, default: 60 } }
+      responses:
+        "200": { description: "`{samples: [{ts, cpu_percent?, mem_used_bytes?, mem_total_bytes?, load1?, net_rx_bps?, net_tx_bps?, disks?}]}`" }

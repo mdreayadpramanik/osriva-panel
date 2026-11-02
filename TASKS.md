@@ -46,13 +46,20 @@
 - [ ] Signed release artifacts + checksums (cosign / minisign), GitHub release workflow, published container images
 - [ ] Agent self-update from the panel
 
-## Phase 3: Server management (next)
+## Phase 3a: Tasks, metrics, services, processes (done)
 
-- [ ] Typed, allowlisted agent tasks over the mTLS channel (control plane → agent), with audit and real exit codes
-- [ ] Live metrics: CPU %, memory, disk I/O, network throughput, load; retention
-- [ ] Service management (list/start/stop/restart) via systemd, OpenRC, Windows SCM, rc.d
-- [ ] Process list, system logs (journald / Event Log), users and groups, SSH keys, cron, hostname and timezone (dangerous ops behind re-auth)
+- [x] Typed, allowlisted agent tasks over mTLS (long poll), audited, real exit status (ADR-0005)
+- [x] Live metrics (CPU, memory, swap, load, network, disks), 24 h retention
+- [x] Service management via systemd and Windows SCM; process list (Linux, Windows)
+- [ ] OpenRC and BSD service/process adapters; BSD metrics
+
+## Phase 3b: Server management, continued (next)
+
+- [ ] System and service logs (journald / Windows Event Log), bounded and filtered
+- [ ] Users and groups, SSH authorized keys (dangerous changes behind re-auth)
+- [ ] Scheduled tasks (cron / Task Scheduler), hostname, timezone
 - [ ] File manager with path confinement, upload/download, permission editing
+- [ ] Disk I/O metrics; downsampled charts for long windows
 
 ## Phases 3–14 (summary; expanded when each phase starts)
 

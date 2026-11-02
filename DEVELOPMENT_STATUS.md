@@ -1,9 +1,50 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-02** · Current phase: **2 (agent & installer) done** · Next: **Phase 3 (server management)**
+Last updated: **2026-11-02** · Current phase: **3a (tasks, live metrics, services, processes) done** · Next: **Phase 3b**
 
-**OSRIVA Panel is not production-ready.** It can be installed, can enrol servers and
-shows what their agents report. It cannot change anything on a server yet.
+**OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
+metrics, list services and processes, and start/stop/restart/enable/disable services.
+Nothing else on a server can be changed yet.
+
+## Phase 3a report (typed agent tasks, live metrics, services, processes)
+
+Design: [ADR-0005](docs/adr/0005-agent-tasks-and-metrics.md). Evidence: `System tests`
+run 41467259328 (commit `0424ee6`, 2026-11-02, both jobs passed) plus a real agent on
+Windows 11.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Closed task allowlist (`services.list`, `service.action`, `processes.list`), validated on control plane **and** agent; no shell task exists | `agenttask`, `tasks`, e2e tests; `shell.exec` and `x;reboot` rejected in CI on both OSes |
+| Delivery by long poll over mutual TLS (woken immediately when a task is queued), results once only, agents isolated from each other | e2e tests over real TLS |
+| Lifecycle: queued → running → succeeded/failed/expired; 2 min pickup, 5 min run timeout, janitor | store contract tests (memstore + PostgreSQL 17) |
+| Permissions: `servers.read` for listing, new `servers.operate` for actions, re-auth for stop/disable; every task audited | e2e tests |
+| systemd: list services (unit + unit-file state), start/stop/restart/enable/disable | Ubuntu 24.04 CI: `cron.service` stopped, started, restarted, confirmed with `systemctl` |
+| Windows SCM: list (least-privilege access), start/stop/restart/enable/disable | Windows Server 2022 CI: Spooler stopped and started, confirmed with `Get-Service`; Windows 11: 281 services listed unprivileged, action correctly denied |
+| Process list: Linux `/proc` (user, RSS, threads, command), Windows toolhelp (RSS, image path) | Ubuntu CI, Windows Server 2022 CI, Windows 11 (246 processes) |
+| Live metrics every 10 s, uploaded every 30 s: CPU %, memory, swap, load (Linux), network rx/tx rate, disks; no invented first-sample rates; 24 h retention | `metrics` tests (incl. counter reset), Ubuntu CI (CPU, memory, load), Windows CI and Windows 11 (CPU, memory, network, disks) |
+| Dashboard: Live metrics, Services (with actions), Processes and Activity tabs | `tsc` + `next build`; tabs clicked through in a browser with a real agent on Windows 11 |
+
+### Partially implemented / untested
+
+* **OpenRC, FreeBSD and other BSDs:** no service or process adapter. Tasks fail with an explicit "not supported" error.
+* **Metrics on BSD:** not collected (samples carry only a timestamp; the dashboard shows "not reported").
+* **Swap on Windows:** not reported.
+* Metrics charts are simple line charts of raw samples, without downsampling over 24 h.
+
+### Missing (Phase 3b)
+
+* Logs (journald / Windows Event Log), users and groups, SSH keys, cron, hostname, timezone, file manager.
+
+### Known bugs
+
+* None known.
+
+### Security notes
+
+* Stopping or disabling a service always asks for the password again, but OSRIVA cannot tell
+  which service keeps the operator connected (for example `sshd`). The dashboard warns, and the action is audited.
 
 ## Phase 2b report (installer, agent service, one-line installers)
 
@@ -76,5 +117,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 1 | Architecture, API, DB, auth, RBAC, logging, dashboard core | ✅ Done |
 | 2a | Agent, secure enrolment, mTLS, inventory, compatibility engine, Servers UI | ✅ Done |
 | 2b | Installer, agent service, one-line installers | ✅ Done (caveats above) |
-| 3 | Live metrics, service management, security management, file manager | ⏭ Next |
+| 3a | Typed agent tasks, live metrics, services, processes | ✅ Done |
+| 3b | Logs, users / groups, SSH keys, cron, hostname / timezone, file manager | ⏭ Next |
 | 4–14 | See [TASKS.md](TASKS.md) | Not started |

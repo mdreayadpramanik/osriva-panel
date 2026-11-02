@@ -40,6 +40,19 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | illumos, macOS | UNSUPPORTED | UNSUPPORTED | Only portable facts are collected; no agent builds are served. |
 | Immutable OSes (Fedora CoreOS, Flatcar, Talos …) | PARTIALLY_SUPPORTED (expected) | NOT_TESTED | Detected and flagged by the compatibility engine. A conventional agent install may be impossible. |
 
+## Server management: tasks and live metrics (Phase 3a)
+
+"System tests run 41467259328" is the `System tests` workflow at commit `0424ee6` (2026-11-02).
+
+| Platform | Live metrics | Services (list + control) | Processes | Evidence / notes |
+|----------|--------------|---------------------------|-----------|------------------|
+| Ubuntu 24.04 (systemd) | SUPPORTED | SUPPORTED | SUPPORTED | System tests run 41467259328: `cron.service` stop/start/restart, process list, CPU/memory/load metrics. |
+| Other systemd distributions | NOT_TESTED | NOT_TESTED | NOT_TESTED | Same `/proc` and `systemctl --output=json` (systemd ≥ 246) paths. |
+| Linux with OpenRC | NOT_TESTED | UNSUPPORTED | NOT_TESTED | No OpenRC service adapter yet; tasks fail with an explicit error. |
+| Windows Server 2022 | SUPPORTED | SUPPORTED | SUPPORTED | System tests run 41467259328: Spooler stop/start as LocalSystem, process list, CPU/memory metrics. |
+| Windows 11 | SUPPORTED | PARTIALLY_SUPPORTED | SUPPORTED | Real agent unprivileged: 281 services listed, control correctly denied without admin; as a service (LocalSystem) control is expected to work but was not run. |
+| FreeBSD, OpenBSD, NetBSD | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | No collectors or adapters yet. |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4–11).
