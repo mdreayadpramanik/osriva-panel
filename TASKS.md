@@ -55,10 +55,11 @@
 
 ## Phase 3b: Server management, continued (next)
 
-- [ ] System and service logs (journald / Windows Event Log), bounded and filtered
+- [x] System and service logs (journald / Windows Event Log), bounded and filtered (CI run 41494257938)
 - [ ] Users and groups, SSH authorized keys (dangerous changes behind re-auth)
 - [ ] Scheduled tasks (cron / Task Scheduler), hostname, timezone
-- [ ] File manager with path confinement, upload/download, permission editing
+- [x] File manager with agent-side path confinement: list, view, edit, create, delete (CI run 41494257938)
+- [ ] File upload/download of large or binary files, rename, chmod/chown
 - [ ] Disk I/O metrics; downsampled charts for long windows
 
 ## Phases 3–14 (summary; expanded when each phase starts)

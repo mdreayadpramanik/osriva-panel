@@ -623,7 +623,10 @@ paths:
         Allowed types (closed list, validated again by the agent):
         `services.list` and `processes.list` (servers.read, params `{}`), and
         `service.action` (servers.operate, params `{name, action}` with action
-        start|stop|restart|enable|disable; stop/disable need re-auth). Queued tasks
+        start|stop|restart|enable|disable; stop/disable need re-auth).
+        `logs.read` (servers.read, params `{source: system|application|service, service?, lines?, min_level?}`).
+        `files.list|files.read|files.write|files.mkdir|files.delete` (servers.files; writes need
+        re-auth; params `{path}` or `{path, content, create?}`), confined by the agent's own policy. Queued tasks
         expire after 2 minutes if the agent does not pick them up.
       requestBody:
         required: true
@@ -633,7 +636,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [services.list, service.action, processes.list] }
+                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete] }
                 params: { type: object }
             example: { type: service.action, params: { name: nginx.service, action: restart } }
       responses:

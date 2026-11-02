@@ -4,7 +4,7 @@ import { Badge, Card, PageHeader } from "@/components/ui";
 const phases: { phase: number; title: string; status: "available" | "in-progress" | "planned"; items: string[] }[] = [
   { phase: 1, title: "Foundation", status: "available", items: ["Authentication & sessions", "TOTP two-factor", "Role-based access control", "Audit log", "Panel settings"] },
   { phase: 2, title: "Agent & installer", status: "available", items: ["OSRIVA Agent with OS & hardware detection", "Compatibility engine", "Secure enrolment & mutual-TLS reporting", "Agent as a system service (systemd, OpenRC, rc.d, Windows)", "One-line agent installers", "Control-plane installer with upgrade & rollback"] },
-  { phase: 3, title: "Server management", status: "in-progress", items: ["✓ Live metrics (CPU, memory, network, disks)", "✓ Service management (systemd, Windows)", "✓ Process list", "Logs, users, SSH keys, cron, file manager (3b)"] },
+  { phase: 3, title: "Server management", status: "in-progress", items: ["✓ Live metrics (CPU, memory, network, disks)", "✓ Service management (systemd, Windows)", "✓ Process list", "✓ Logs (journald, Windows Event Log)", "✓ File manager (confined by the agent)", "Users, SSH keys, cron, hostname (3b-2)"] },
   { phase: 4, title: "Applications", status: "planned", items: ["Docker manager", "Git & upload deployments", "Runtime adapters", "Deployment history & rollback"] },
   { phase: 5, title: "Websites & domains", status: "planned", items: ["Websites & virtual hosts", "Reverse proxy", "SSL (ACME / Let's Encrypt)", "DNS provider adapters"] },
   { phase: 6, title: "CMS manager", status: "planned", items: ["WordPress install & management (WP-CLI)", "Joomla, Drupal, Ghost, PrestaShop …", "Staging, cloning & migration"] },

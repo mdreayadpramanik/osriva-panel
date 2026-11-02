@@ -53,6 +53,19 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Windows 11 | SUPPORTED | PARTIALLY_SUPPORTED | SUPPORTED | Real agent unprivileged: 281 services listed, control correctly denied without admin; as a service (LocalSystem) control is expected to work but was not run. |
 | FreeBSD, OpenBSD, NetBSD | UNSUPPORTED | UNSUPPORTED | UNSUPPORTED | No collectors or adapters yet. |
 
+### Logs and file manager (Phase 3b-1)
+
+"System tests run 41494257938" is the `System tests` workflow at commit `fd8c13b` (2026-11-02).
+
+| Platform | Logs | File manager | Evidence / notes |
+|----------|------|--------------|------------------|
+| Ubuntu 24.04 (journald) | SUPPORTED | SUPPORTED | System tests run 41494257938, agent as root: journal + unit logs; write/read/delete under `/srv`; secrets, `/root` and a symlink escape refused. |
+| Other Linux with journald | NOT_TESTED | NOT_TESTED | Same `journalctl --output=json` and file code paths. |
+| Linux without journald (OpenRC …) | UNSUPPORTED | NOT_TESTED | Logs need journald; files use portable code. |
+| Windows Server 2022 | SUPPORTED (System, Application) | SUPPORTED | System tests run 41494257938, agent as LocalSystem: Event Log, write/read/delete under `C:\ProgramData`, SAM and agent key refused. Per-service logs: UNSUPPORTED. |
+| Windows 11 | SUPPORTED | SUPPORTED | Real agent (unprivileged) on 2026-11-02. |
+| BSD | UNSUPPORTED | NOT_TESTED | No log backend; files use portable code. |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4–11).

@@ -1,10 +1,33 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-02** · Current phase: **3a (tasks, live metrics, services, processes) done** · Next: **Phase 3b**
+Last updated: **2026-11-02** · Current phase: **3b-1 (logs, file manager) done** · Next: **Phase 3b-2 (users, SSH keys, cron, hostname)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
-metrics, list services and processes, and start/stop/restart/enable/disable services.
-Nothing else on a server can be changed yet.
+metrics and logs, list services and processes, control services, and browse and edit files
+inside each agent's allowed directories. Users, SSH keys and cron cannot be managed yet.
+
+## Phase 3b-1 report (logs and file manager)
+
+Evidence: `System tests` run 41494257938 (commit `fd8c13b`, 2026-11-02, both jobs passed)
+plus a real agent on Windows 11.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| `logs.read`: journald (whole journal or one unit, level filter, ≤ 1000 entries) | Ubuntu 24.04 CI (journal + `osriva-agent.service`) |
+| `logs.read`: Windows System / Application Event Log (wevtutil RenderedXml); per-service logs on Windows explicitly unsupported | Windows Server 2022 CI, Windows 11 |
+| File manager: list, read (text ≤ 512 KiB, binary detected), atomic write, mkdir, non-recursive delete | unit tests; Ubuntu CI (as root) and Windows CI (as LocalSystem); Windows 11 |
+| Agent-side confinement: roots from `file_roots` (panel cannot widen), deny list, lexical check before disk access, symlink resolution | unit tests; Ubuntu CI as root: `/etc/shadow`, `/etc/sudoers`, agent key, `/etc/osriva/osriva.env`, `/root`, `/proc/1/environ`, `/etc/../root`, symlink to `/root` all refused; Windows CI: SAM, traversal, agent key refused |
+| `servers.files` permission, re-auth for writes, content redacted from task list and audit, file results hidden from readers without `servers.files` | e2e tests; CI checks that the written secret never appears in the task list |
+| Dashboard Logs and Files tabs | `tsc` + browser with a real agent on Windows 11 |
+
+### Limitations
+
+* Files larger than 512 KiB can only be viewed partially and cannot be edited. Binary files cannot be viewed. No upload or download of arbitrary files yet.
+* No rename, chmod or chown yet.
+* Non-ASCII Windows event messages depend on the console code page of `wevtutil` and may be garbled.
+* Logs on OpenRC/BSD hosts (no journald) are not supported.
 
 ## Phase 3a report (typed agent tasks, live metrics, services, processes)
 
@@ -118,5 +141,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 2a | Agent, secure enrolment, mTLS, inventory, compatibility engine, Servers UI | ✅ Done |
 | 2b | Installer, agent service, one-line installers | ✅ Done (caveats above) |
 | 3a | Typed agent tasks, live metrics, services, processes | ✅ Done |
-| 3b | Logs, users / groups, SSH keys, cron, hostname / timezone, file manager | ⏭ Next |
+| 3b-1 | Logs, confined file manager | ✅ Done |
+| 3b-2 | Users / groups, SSH keys, cron, hostname / timezone | ⏭ Next |
 | 4–14 | See [TASKS.md](TASKS.md) | Not started |
