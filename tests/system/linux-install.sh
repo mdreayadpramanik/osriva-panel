@@ -13,6 +13,7 @@ PANEL="https://localhost"
 JAR="$(mktemp)"
 EMAIL="ci-owner@example.com"
 step() { echo; echo "######## $*"; }
+fail() { echo "FAILED: $*" >&2; exit 1; }
 
 [ "${CI:-}" = true ] || { echo "refusing to run outside CI (set CI=true if this machine is disposable)"; exit 1; }
 
@@ -71,6 +72,38 @@ sudo stat -c '%a' /etc/osriva-agent | grep -qx 700
 wait_for 90 "server online" is_online
 api GET "/servers/$SERVER_ID" | jq -e '.inventory.os.family == "linux" and (.capabilities[] | select(.key == "agent.inventory") | .status == "SUPPORTED")'
 
+step "tasks: list services and processes, control a service (agent runs as root via systemd)"
+task() { # task TYPE PARAMS_JSON -> final task JSON
+	local t id i s
+	t="$(api POST "/servers/$SERVER_ID/tasks" "$(jq -nc --arg t "$1" --argjson p "$2" '{type:$t,params:$p}')")"
+	id="$(jq -r .id <<<"$t")"
+	for i in 1 2 3; do
+		t="$(api GET "/servers/$SERVER_ID/tasks/$id?wait=20")"
+		s="$(jq -r .status <<<"$t")"
+		[ "$s" = queued ] || [ "$s" = running ] || break
+	done
+	echo "$t"
+}
+SERVICES="$(task services.list '{}')"
+jq -e '.status == "succeeded" and .result.manager == "systemd" and (.result.services | length > 20)' <<<"$SERVICES" >/dev/null
+SVC="$(jq -r '[.result.services[] | select(.state == "running" and (.name == "cron.service" or .name == "rsyslog.service" or .name == "atd.service"))][0].name' <<<"$SERVICES")"
+[ -n "$SVC" ] && [ "$SVC" != null ] || { echo "no safe running service to control"; exit 1; }
+echo "controlling $SVC"
+task processes.list '{}' | jq -e '.status == "succeeded" and (.result.processes | length > 10) and ([.result.processes[] | select(.name == "osriva-agent")] | length == 1)' >/dev/null
+task service.action "{\"name\":\"$SVC\",\"action\":\"stop\"}" | jq -e '.status == "succeeded" and .result.state == "stopped"'
+! systemctl is-active --quiet "$SVC" || fail 'negated check failed (see line above)'
+task service.action "{\"name\":\"$SVC\",\"action\":\"start\"}" | jq -e '.status == "succeeded" and .result.state == "running"'
+systemctl is-active --quiet "$SVC"
+task service.action "{\"name\":\"$SVC\",\"action\":\"restart\"}" | jq -e '.status == "succeeded"'
+# The control plane refuses anything outside the typed allowlist.
+! api POST "/servers/$SERVER_ID/tasks" '{"type":"shell.exec","params":{"cmd":"id"}}' >/dev/null 2>&1 || fail 'negated check failed (see line above)'
+! api POST "/servers/$SERVER_ID/tasks" '{"type":"service.action","params":{"name":"x;reboot","action":"stop"}}' >/dev/null 2>&1 || fail 'negated check failed (see line above)'
+api GET "/servers/$SERVER_ID/tasks" | jq -e '[.tasks[] | select(.type == "service.action")] | length == 3' >/dev/null
+
+step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
+has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
+wait_for 90 "metrics with CPU, memory and load" has_metrics
+
 step "backup"
 sudo "$INSTALLER" backup
 sudo test -s /var/backups/osriva/latest/database.sql.gz
@@ -95,7 +128,7 @@ api POST "/servers/$SERVER_ID/revoke" >/dev/null
 [ "$(server_connection)" = revoked ]
 wait_for 150 "agent service stopped" sh -c '! systemctl is-active --quiet osriva-agent'
 sleep 15 # longer than RestartSec: it must not come back
-! systemctl is-active --quiet osriva-agent
+! systemctl is-active --quiet osriva-agent || fail 'negated check failed (see line above)'
 [ "$(systemctl show -p ExecMainStatus --value osriva-agent)" = 3 ]
 
 step "uninstall"

@@ -168,6 +168,9 @@ func NewAgentHandler(o Options) http.Handler {
 	})
 	r.Post(agentproto.ReportPath, s.handleAgentReport)
 	r.Post(agentproto.RenewPath, s.handleAgentRenew)
+	r.Post(agentproto.TasksPollPath, s.handleAgentPoll)
+	r.Post(agentproto.TaskResultPathPrefix+"{taskId}/result", s.handleAgentTaskResult)
+	r.Post(agentproto.MetricsPath, s.handleAgentMetrics)
 	return r
 }
 

@@ -116,6 +116,7 @@ type AuditFilter struct {
 
 type Store interface {
 	ServerStore
+	TaskStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -225,4 +226,54 @@ type ServerStore interface {
 	// RecordReport stores the latest facts, last-seen data and inventory snapshot.
 	RecordReport(ctx context.Context, serverID string, facts ServerFacts, ip string, now time.Time, inv *ServerInventory) error
 	GetServerInventory(ctx context.Context, serverID string) (*ServerInventory, error)
+}
+
+// ---- Agent tasks and metrics (Phase 3) ----
+
+type TaskStatus string
+
+const (
+	TaskQueued    TaskStatus = "queued"
+	TaskRunning   TaskStatus = "running"
+	TaskSucceeded TaskStatus = "succeeded"
+	TaskFailed    TaskStatus = "failed"
+	TaskExpired   TaskStatus = "expired"
+)
+
+type Task struct {
+	ID          string
+	ServerID    string
+	Type        string
+	Params      json.RawMessage
+	Status      TaskStatus
+	RequestedBy *string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
+	Result      json.RawMessage
+	Error       string
+}
+
+type MetricSample struct {
+	ServerID string
+	TS       time.Time
+	Data     json.RawMessage
+}
+
+// TaskStore persists the agent task queue and metric samples.
+type TaskStore interface {
+	CreateTask(ctx context.Context, t *Task) error
+	GetTask(ctx context.Context, id string) (*Task, error)
+	ListTasks(ctx context.Context, serverID string, limit int) ([]Task, error)
+	// ClaimTasks atomically moves up to limit queued, unexpired tasks of the server to running.
+	ClaimTasks(ctx context.Context, serverID string, now time.Time, limit int) ([]Task, error)
+	// CompleteTask records the outcome of a running task of serverID (ErrNotFound otherwise).
+	CompleteTask(ctx context.Context, serverID, taskID string, status TaskStatus, result json.RawMessage, errMsg string, now time.Time) error
+	// ExpireTasks expires queued tasks past their deadline and fails running tasks started before runningBefore.
+	ExpireTasks(ctx context.Context, now, runningBefore time.Time) (int, error)
+
+	InsertMetrics(ctx context.Context, samples []MetricSample) error
+	ListMetrics(ctx context.Context, serverID string, since time.Time, limit int) ([]MetricSample, error)
+	PruneMetrics(ctx context.Context, before time.Time) (int, error)
 }

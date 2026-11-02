@@ -61,6 +61,8 @@ type Service struct {
 	agentURL string
 	limiter  *ratelimit.KeyedLimiter
 
+	notify notifier
+
 	certMu     sync.Mutex
 	serverCert *tls.Certificate
 }

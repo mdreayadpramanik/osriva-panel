@@ -15,18 +15,21 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/agent/internal/service"
 	"github.com/mdreayadpramanik/osriva-panel/agent/internal/state"
+	"github.com/mdreayadpramanik/osriva-panel/agent/internal/tasks"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentclient"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentproto"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/compat"
 	"github.com/mdreayadpramanik/osriva-panel/pkg/inventory"
+	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
-var version = "0.2.0-dev"
+var version = "0.3.0-dev"
 
 const usage = `OSRIVA Agent
 
@@ -232,16 +235,26 @@ func runLoop(ctx context.Context, log *slog.Logger, dir string, once bool) error
 	}
 	log.Info("agent starting", "version", version, "server_id", st.Config.ServerID, "endpoint", st.Config.AgentEndpoint)
 
+	h := &clientHolder{c: client}
+	if once {
+		_, err := cycle(ctx, log, st, h)
+		if isRevoked(err) {
+			return revokedErr(log, err)
+		}
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	revoked := make(chan error, 3)
+	go metricsWorker(ctx, log, h, revoked)
+	go taskWorker(ctx, log, h, revoked)
+
 	backoff := 5 * time.Second
 	for {
-		next, err := cycle(ctx, log, st, &client)
-		var ae *agentclient.APIError
-		if err != nil && errors.As(err, &ae) && ae.Code == "agent_forbidden" {
-			log.Error("the control plane rejected this agent's certificate; it was probably revoked", "err", err)
-			return fmt.Errorf("%w: %v", service.ErrRevoked, err)
-		}
-		if once {
-			return err
+		next, err := cycle(ctx, log, st, h)
+		if isRevoked(err) {
+			return revokedErr(log, err)
 		}
 		wait := next
 		if err != nil {
@@ -254,27 +267,135 @@ func runLoop(ctx context.Context, log *slog.Logger, dir string, once bool) error
 		case <-ctx.Done():
 			log.Info("agent stopping")
 			return nil
+		case err := <-revoked:
+			return revokedErr(log, err)
 		case <-time.After(wait):
 		}
 	}
 }
 
+// clientHolder shares the current client between workers; renewal swaps it.
+type clientHolder struct {
+	mu sync.RWMutex
+	c  *agentclient.Client
+}
+
+func (h *clientHolder) get() *agentclient.Client  { h.mu.RLock(); defer h.mu.RUnlock(); return h.c }
+func (h *clientHolder) set(c *agentclient.Client) { h.mu.Lock(); h.c = c; h.mu.Unlock() }
+
+func isRevoked(err error) bool {
+	var ae *agentclient.APIError
+	return err != nil && errors.As(err, &ae) && ae.Code == "agent_forbidden"
+}
+
+func revokedErr(log *slog.Logger, err error) error {
+	log.Error("the control plane rejected this agent's certificate; it was probably revoked", "err", err)
+	return fmt.Errorf("%w: %v", service.ErrRevoked, err)
+}
+
+// metricsWorker samples every 10 s and uploads every 30 s, keeping a bounded
+// buffer while the control plane is unreachable.
+func metricsWorker(ctx context.Context, log *slog.Logger, h *clientHolder, revoked chan<- error) {
+	col := metrics.NewCollector()
+	tick := time.NewTicker(10 * time.Second)
+	defer tick.Stop()
+	var buf []metrics.Sample
+	for n := 1; ; n++ {
+		buf = append(buf, col.Sample())
+		if len(buf) > agentproto.MaxMetricsBatch {
+			buf = buf[len(buf)-agentproto.MaxMetricsBatch:]
+		}
+		if n%3 == 0 {
+			cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			err := h.get().SendMetrics(cctx, buf)
+			cancel()
+			switch {
+			case err == nil:
+				buf = buf[:0]
+			case isRevoked(err):
+				revoked <- err
+				return
+			case ctx.Err() == nil:
+				log.Warn("metrics upload failed; keeping samples", "err", err, "buffered", len(buf))
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+// taskWorker long-polls for tasks and executes them one at a time.
+func taskWorker(ctx context.Context, log *slog.Logger, h *clientHolder, revoked chan<- error) {
+	backoff := 5 * time.Second
+	for ctx.Err() == nil {
+		list, err := h.get().PollTasks(ctx)
+		if err != nil {
+			if isRevoked(err) {
+				revoked <- err
+				return
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			log.Warn("task poll failed", "err", err, "retry_in", backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			backoff = min(backoff*2, time.Minute)
+			continue
+		}
+		backoff = 5 * time.Second
+		for _, t := range list {
+			res := agentproto.TaskResult{Status: "succeeded"}
+			out, err := tasks.Execute(ctx, t.Type, t.Params)
+			if err == nil {
+				res.Result, err = json.Marshal(out)
+			}
+			if err != nil {
+				res = agentproto.TaskResult{Status: "failed", Error: err.Error()}
+			}
+			log.Info("task done", "task_id", t.ID, "type", t.Type, "status", res.Status)
+			for attempt := 0; attempt < 3; attempt++ {
+				cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				err = h.get().SendResult(cctx, t.ID, res)
+				cancel()
+				if err == nil || isRevoked(err) || ctx.Err() != nil {
+					break
+				}
+				time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+			}
+			if isRevoked(err) {
+				revoked <- err
+				return
+			}
+			if err != nil {
+				log.Warn("could not deliver task result", "task_id", t.ID, "err", err)
+			}
+		}
+	}
+}
+
 // cycle renews the certificate when due, then sends one report.
-func cycle(ctx context.Context, log *slog.Logger, st *state.State, client **agentclient.Client) (time.Duration, error) {
+func cycle(ctx context.Context, log *slog.Logger, st *state.State, h *clientHolder) (time.Duration, error) {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if due, err := agentclient.NeedsRenewal(st.CertPEM, time.Now()); err == nil && due {
-		certPEM, keyPEM, err := (*client).Renew(cctx)
+		certPEM, keyPEM, err := h.get().Renew(cctx)
 		if err != nil {
 			log.Warn("certificate renewal failed; will retry", "err", err)
 		} else if err := st.SaveCredentials(certPEM, keyPEM); err != nil {
 			log.Error("saving renewed certificate failed", "err", err)
 		} else if c, err := agentclient.New(st.Config.AgentEndpoint, st.CAPEM, certPEM, keyPEM); err == nil {
-			*client = c
+			h.set(c)
 			log.Info("certificate renewed")
 		}
 	}
-	resp, err := (*client).Report(cctx, agentproto.ReportRequest{AgentVersion: version, Inventory: inventory.Collect()})
+	resp, err := h.get().Report(cctx, agentproto.ReportRequest{AgentVersion: version, Inventory: inventory.Collect()})
 	if err != nil {
 		return 0, err
 	}

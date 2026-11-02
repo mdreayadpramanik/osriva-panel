@@ -126,6 +126,10 @@ func (s *Server) routes() http.Handler {
 			r.Get("/servers/{id}", s.handleGetServer)
 			r.Post("/servers/{id}/enrollment-token", s.handleRegenerateEnrollment)
 			r.Post("/servers/{id}/revoke", s.handleRevokeServer)
+			r.Get("/servers/{id}/metrics", s.handleServerMetrics)
+			r.Get("/servers/{id}/tasks", s.handleListTasks)
+			r.Post("/servers/{id}/tasks", s.handleQueueTask)
+			r.Get("/servers/{id}/tasks/{taskId}", s.handleGetTask)
 		})
 	})
 	return r

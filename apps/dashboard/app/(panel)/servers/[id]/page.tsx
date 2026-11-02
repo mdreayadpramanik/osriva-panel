@@ -9,6 +9,18 @@ import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, EmptyState, LoadingBlock, PageHeader, Table, Td, Th } from "@/components/ui";
 import { CapabilityBadge, ConnectionBadge } from "../connection";
 import { EnrollmentInstructions } from "../enrollment";
+import { MetricsPanel } from "./metrics";
+import { ActivityPanel, ProcessesPanel } from "./processes";
+import { ServicesPanel } from "./services";
+
+type Tab = "overview" | "metrics" | "services" | "processes" | "activity";
+const tabs: { key: Tab; label: string }[] = [
+  { key: "overview", label: "Overview" },
+  { key: "metrics", label: "Live metrics" },
+  { key: "services", label: "Services" },
+  { key: "processes", label: "Processes" },
+  { key: "activity", label: "Activity" },
+];
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -37,6 +49,7 @@ export default function ServerDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const load = useCallback(() => {
     api<ServerDetail>(`/servers/${id}`)
@@ -155,7 +168,27 @@ export default function ServerDetailPage() {
         </div>
       )}
 
-      {inv ? (
+      {s.status === "active" && (
+        <div role="tablist" aria-label="Server sections" className="mb-6 flex gap-1 overflow-x-auto border-b border-line">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              role="tab"
+              aria-selected={tab === t.key}
+              onClick={() => setTab(t.key)}
+              className={"-mb-px whitespace-nowrap border-b-2 px-3 py-2 text-sm " + (tab === t.key ? "border-accent font-medium text-fg" : "border-transparent text-muted hover:text-fg")}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === "metrics" && <MetricsPanel serverId={s.id} />}
+      {tab === "services" && <ServicesPanel serverId={s.id} online={s.connection === "online"} />}
+      {tab === "processes" && <ProcessesPanel serverId={s.id} online={s.connection === "online"} />}
+      {tab === "activity" && <ActivityPanel serverId={s.id} />}
+
+      {tab === "overview" && (inv ? (
         <div className="grid gap-6 lg:grid-cols-3">
           <Card title="System">
             <dl className="divide-y divide-line">
@@ -275,7 +308,7 @@ export default function ServerDetailPage() {
         </div>
       ) : (
         s.status !== "pending" && <EmptyState title="No inventory yet">The agent enrolled but has not sent a report.</EmptyState>
-      )}
+      ))}
 
       <p className="mt-6 text-xs text-muted">
         Added {formatDate(s.created_at)}

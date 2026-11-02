@@ -30,6 +30,7 @@ type agentEnv struct {
 	fleet    *fleet.Service
 	owner    *identity.Principal
 	panelURL string
+	svc      *identity.Service
 }
 
 func serve(t *testing.T, ln net.Listener, h http.Handler) {
@@ -77,7 +78,7 @@ func newAgentEnv(t *testing.T) *agentEnv {
 	}
 	serve(t, panelLn, New(opts))
 	serve(t, tls.NewListener(agentLn, tlsCfg), NewAgentHandler(opts))
-	return &agentEnv{t: t, fleet: fl, owner: login.Principal, panelURL: panelURL}
+	return &agentEnv{t: t, fleet: fl, owner: login.Principal, panelURL: panelURL, svc: svc}
 }
 
 func (e *agentEnv) addServer(name string) *fleet.Enrollment {

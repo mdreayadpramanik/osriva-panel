@@ -81,6 +81,33 @@ try {
     if (($d.capabilities | Where-Object key -eq 'agent.inventory').status -ne 'SUPPORTED') { throw 'windows/amd64 should be SUPPORTED' }
     if (-not $d.inventory.privileged) { throw 'service should run elevated (LocalSystem)' }
 
+    Step 'tasks: list services and processes, control the Print Spooler'
+    function Run-Task([string]$type, $params = @{}) {
+        $t = Api Post "/servers/$id/tasks" @{ type = $type; params = $params }
+        for ($i = 0; $i -lt 3 -and ($t.status -eq 'queued' -or $t.status -eq 'running'); $i++) {
+            $t = Api Get "/servers/$id/tasks/$($t.id)?wait=20"
+        }
+        return $t
+    }
+    $svcs = Run-Task 'services.list'
+    if ($svcs.status -ne 'succeeded' -or $svcs.result.manager -ne 'windows-scm') { throw "services.list: $($svcs.status) $($svcs.error)" }
+    if (-not ($svcs.result.services | Where-Object name -eq 'Spooler')) { throw 'Spooler not listed' }
+    $procs = Run-Task 'processes.list'
+    if ($procs.status -ne 'succeeded' -or -not ($procs.result.processes | Where-Object name -eq 'osriva-agent.exe')) { throw "processes.list: $($procs.error)" }
+    $r = Run-Task 'service.action' @{ name = 'Spooler'; action = 'stop' }
+    if ($r.status -ne 'succeeded' -or $r.result.state -ne 'stopped' -or (Get-Service Spooler).Status -ne 'Stopped') { throw "stop Spooler: $($r.status) $($r.error)" }
+    $r = Run-Task 'service.action' @{ name = 'Spooler'; action = 'start' }
+    if ($r.status -ne 'succeeded' -or $r.result.state -ne 'running' -or (Get-Service Spooler).Status -ne 'Running') { throw "start Spooler: $($r.status) $($r.error)" }
+    $rejected = $false
+    try { Api Post "/servers/$id/tasks" @{ type = 'shell.exec'; params = @{ cmd = 'whoami' } } | Out-Null } catch { $rejected = $true }
+    if (-not $rejected) { throw 'shell.exec was accepted' }
+
+    Step 'live metrics arrive'
+    Wait-Until 90 'metrics with CPU and memory' {
+        $m = Api Get "/servers/$id/metrics?minutes=10"
+        @($m.samples | Where-Object { $null -ne $_.cpu_percent -and $_.mem_total_bytes -gt 0 }).Count -gt 0
+    }
+
     Step 'credential directory is restricted to SYSTEM and Administrators'
     $acl = Get-Acl 'C:\ProgramData\OSRIVA\agent'
     if (-not $acl.AreAccessRulesProtected) { throw 'DACL inherits from parent' }

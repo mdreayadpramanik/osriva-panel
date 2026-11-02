@@ -186,6 +186,8 @@ func cmdServe() error {
 	if err != nil {
 		return err
 	}
+	go fl.RunJanitor(ctx, 30*time.Second)
+
 	dist, err := agentdist.Load(rt.cfg.AgentDistDir, rt.cfg.PublicURL)
 	if err != nil {
 		return err

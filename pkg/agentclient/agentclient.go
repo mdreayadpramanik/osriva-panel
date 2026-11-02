@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agentproto"
+	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
 // APIError is an error response from the control plane.
@@ -114,6 +115,9 @@ func postJSON(ctx context.Context, hc *http.Client, url string, in, out any) err
 		}
 		return &APIError{Status: resp.StatusCode, Code: e.Error.Code, Message: e.Error.Message}
 	}
+	if out == nil || len(raw) == 0 {
+		return nil // e.g. 204 No Content
+	}
 	return json.Unmarshal(raw, out)
 }
 
@@ -193,7 +197,8 @@ func New(endpoint string, caPEM, certPEM, keyPEM []byte) (*Client, error) {
 		},
 		ForceAttemptHTTP2: true,
 	}
-	return &Client{endpoint: u.String(), hc: &http.Client{Timeout: 30 * time.Second, Transport: tr}}, nil
+	// Long enough for a task long poll (agentproto.PollWait) plus network latency.
+	return &Client{endpoint: u.String(), hc: &http.Client{Timeout: agentproto.PollWait + 20*time.Second, Transport: tr}}, nil
 }
 
 func (c *Client) Report(ctx context.Context, req agentproto.ReportRequest) (*agentproto.ReportResponse, error) {
@@ -261,4 +266,23 @@ func verifyPanelCA(ctx context.Context, hc *http.Client, panelURL, want string) 
 		return fmt.Errorf("CA fingerprint mismatch: expected %s, panel has %s. Refusing to send the enrolment token", want, got)
 	}
 	return nil
+}
+
+// PollTasks long-polls for queued tasks (returns an empty slice after PollWait).
+func (c *Client) PollTasks(ctx context.Context) ([]agentproto.TaskEnvelope, error) {
+	var resp agentproto.PollResponse
+	if err := postJSON(ctx, c.hc, c.endpoint+agentproto.TasksPollPath, struct{}{}, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Tasks, nil
+}
+
+// SendResult reports a task outcome.
+func (c *Client) SendResult(ctx context.Context, taskID string, r agentproto.TaskResult) error {
+	return postJSON(ctx, c.hc, c.endpoint+agentproto.TaskResultPathPrefix+url.PathEscape(taskID)+"/result", r, nil)
+}
+
+// SendMetrics uploads a batch of samples.
+func (c *Client) SendMetrics(ctx context.Context, samples []metrics.Sample) error {
+	return postJSON(ctx, c.hc, c.endpoint+agentproto.MetricsPath, agentproto.MetricsRequest{Samples: samples}, nil)
 }

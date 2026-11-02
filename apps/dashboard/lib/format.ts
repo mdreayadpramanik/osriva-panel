@@ -74,3 +74,8 @@ export function formatDuration(seconds: number): string {
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
 }
+
+export function formatRate(bytesPerSecond: number | null | undefined): string {
+  if (bytesPerSecond == null) return "—";
+  return `${formatBytes(bytesPerSecond)}/s`;
+}

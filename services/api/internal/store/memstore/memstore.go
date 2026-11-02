@@ -32,6 +32,8 @@ type Store struct {
 	servers   map[string]*store.Server
 	certs     map[string]*store.AgentCertificate // by serial
 	inventory map[string]*store.ServerInventory  // by server ID
+	tasks     map[string]*store.Task
+	metrics   map[string][]store.MetricSample // by server ID, sorted by TS
 }
 
 var _ store.Store = (*Store)(nil)
@@ -42,7 +44,8 @@ func New() *Store {
 		users: map[string]*store.User{}, userRoles: map[string][]string{},
 		sessions: map[string]*store.Session{}, settings: map[string]json.RawMessage{},
 		servers: map[string]*store.Server{}, certs: map[string]*store.AgentCertificate{},
-		inventory: map[string]*store.ServerInventory{},
+		inventory: map[string]*store.ServerInventory{}, tasks: map[string]*store.Task{},
+		metrics: map[string][]store.MetricSample{},
 	}
 }
 

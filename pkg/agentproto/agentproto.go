@@ -3,9 +3,11 @@
 package agentproto
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/pkg/inventory"
+	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 )
 
 const (
@@ -69,4 +71,39 @@ type Error struct {
 type CAResponse struct {
 	CAPEM       string `json:"ca_pem"`
 	Fingerprint string `json:"fingerprint"`
+}
+
+// ---- tasks and metrics (Phase 3, ADR-0005) ----
+
+const (
+	// TasksPollPath is a long poll: the server answers when tasks are queued or after PollWait.
+	TasksPollPath = "/agent/v1/tasks/poll"
+	// TaskResultPathPrefix + "{id}/result" receives a task outcome.
+	TaskResultPathPrefix = "/agent/v1/tasks/"
+	MetricsPath          = "/agent/v1/metrics"
+
+	PollWait        = 25 * time.Second
+	MaxResultBytes  = 1 << 20
+	MaxMetricsBatch = 120
+)
+
+type TaskEnvelope struct {
+	ID     string          `json:"id"`
+	Type   string          `json:"type"`
+	Params json.RawMessage `json:"params"`
+}
+
+type PollResponse struct {
+	Tasks []TaskEnvelope `json:"tasks"`
+}
+
+type TaskResult struct {
+	// Status is "succeeded" or "failed".
+	Status string          `json:"status"`
+	Result json.RawMessage `json:"result,omitempty"`
+	Error  string          `json:"error,omitempty"`
+}
+
+type MetricsRequest struct {
+	Samples []metrics.Sample `json:"samples"`
 }

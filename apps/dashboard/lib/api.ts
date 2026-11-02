@@ -200,3 +200,53 @@ export type ServerDetail = {
 };
 
 export type AgentEndpointInfo = { configured: boolean; agent_endpoint: string; ca_fingerprint: string };
+
+// ---- Tasks and metrics (Phase 3) ----
+
+export type MetricSample = {
+  ts: string;
+  cpu_percent?: number;
+  mem_used_bytes?: number;
+  mem_total_bytes?: number;
+  swap_used_bytes?: number;
+  swap_total_bytes?: number;
+  load1?: number;
+  load5?: number;
+  load15?: number;
+  net_rx_bps?: number;
+  net_tx_bps?: number;
+  disks?: { mount: string; used_bytes: number; total_bytes: number }[];
+};
+
+export type TaskStatus = "queued" | "running" | "succeeded" | "failed" | "expired";
+
+export type Task<R = unknown> = {
+  id: string;
+  type: string;
+  params: Record<string, unknown>;
+  status: TaskStatus;
+  requested_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  result: R | null;
+  error: string;
+};
+
+export type ServiceItem = { name: string; description?: string; state: string; detail?: string; startup: string };
+export type ServicesResult = { manager: string; services: ServiceItem[] };
+export type ProcessItem = { pid: number; ppid: number; name: string; user?: string; rss_bytes?: number; threads?: number; command?: string };
+export type ProcessesResult = { processes: ProcessItem[]; truncated?: boolean };
+
+/** Queues a typed task and waits until the agent reports a result. Throws with the agent's error on failure. */
+export async function runTask<R>(serverId: string, type: string, params: Record<string, unknown> = {}): Promise<R> {
+  let task = await api<Task<R>>(`/servers/${serverId}/tasks`, { method: "POST", body: { type, params } });
+  for (let i = 0; i < 6 && (task.status === "queued" || task.status === "running"); i++) {
+    task = await api<Task<R>>(`/servers/${serverId}/tasks/${task.id}?wait=20`);
+  }
+  if (task.status === "succeeded") return task.result as R;
+  if (task.status === "queued" || task.status === "running") {
+    throw new ApiError(504, "task_pending", "The agent has not answered yet. Is it online?");
+  }
+  throw new ApiError(502, `task_${task.status}`, task.error || `Task ${task.status}.`);
+}
