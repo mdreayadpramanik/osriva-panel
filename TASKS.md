@@ -72,10 +72,14 @@
 - [ ] Docker on Windows (named pipe); rootless Docker and Podman verified
 - [ ] Container stats (CPU/memory per container), exec console, volume/network create and delete
 
-## Phase 4b: Deployments (next)
+## Phase 4b: Deployments (done)
 
-- [ ] Git / ZIP / Dockerfile / Compose deployments with build logs, history and rollback
-- [ ] Runtime adapters (Node.js, PHP, Python, Go, static sites)
+- [x] Git deployments (Dockerfile, static, Node.js) with logs, history, rollback and automatic recovery (CI run 41507533185)
+- [x] Encrypted app environment; secrets redacted from task records after completion (CI run 41507533185)
+- [ ] ZIP upload deployments (needs a file-transfer channel to the agent)
+- [ ] Compose deployments with a policy validator (no privileged / host mounts)
+- [ ] Private repositories (deploy keys / tokens); live build logs; zero-downtime releases; HTTP health checks
+- [ ] More runtimes (Python, PHP, Go) without a Dockerfile
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

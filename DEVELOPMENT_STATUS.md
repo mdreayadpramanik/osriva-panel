@@ -1,10 +1,39 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **4a (Docker manager) done** · Next: **Phase 4b (deployments, runtimes)**
+Last updated: **2026-11-03** · Current phase: **4 (Docker, deployments) done** · Next: **Phase 5 (websites, reverse proxy, SSL, DNS)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, and manage Docker containers and images.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, and deploy apps from Git with history and rollback.
+
+## Phase 4b report (deployments)
+
+Design: [ADR-0007](docs/adr/0007-deployments.md). Evidence: `System tests` run 41507533185 (commit `a4d48b8`,
+2026-11-03, both jobs passed): agent as root on Ubuntu 24.04 with real Git and Docker. The two earlier runs
+found real bugs, both fixed and covered by tests:
+* run 41505025936: plain-HTTP Git servers reject shallow clones, so the agent now falls back to a full clone;
+* run 41506048788: the agent's umask 0077 made image files unreadable (nginx 403), so modes are now normalised.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Apps (Git URL, branch/tag, build mode, sub-directory, ports, encrypted env); migration `0004` | store contract tests (memstore + PostgreSQL 17 in CI), e2e tests |
+| `app.deploy`: shallow clone over http(s) (full-clone fallback), context tar without links/`.git`, Engine API build, container swap | fake-Engine unit tests; real `git` over dumb HTTP in a unit test; Ubuntu CI: static site v1 → v2, one container left |
+| Runtimes: Dockerfile, static (nginx), Node.js (`npm start`, `PORT` set) | Ubuntu CI: static site served, Node app answered `node ok 3000` |
+| Crashing release → previous version restarted (`recovered`); failed build → running version untouched; logs kept for failures | unit tests; Ubuntu CI (`process.exit(1)` release, npm install of a missing package) |
+| History and rollback to an earlier build | e2e; Ubuntu CI: rollback brought v1 back |
+| Secrets: env encrypted (AES-GCM, bound to the app), names only in API/audit, task parameters redacted after completion | e2e; Ubuntu CI checked PostgreSQL directly: no secret in `agent_tasks`, `apps` or `audit_logs` |
+| Per-task run timeouts (20 min for deployments), deployments run beside the agent's task loop | contract tests |
+| Delete app removes container and images | Ubuntu CI |
+| Dashboard Apps tab (list, create/settings, deploy, history, logs, rollback, delete) | `tsc`; browser with a real agent on Windows 11 (create, validation error, deploy failing honestly with "Docker on Windows is not supported") |
+
+### Not done / limitations
+
+* ZIP uploads, Compose deployments and private repositories are not supported yet (see ADR-0007).
+* Build logs arrive when the deployment ends, not live. The old container is stopped before the new one starts (brief downtime).
+* Health check = "still running after 5 s"; no HTTP health checks yet. Runtimes beyond static and Node.js (Python, PHP, Go) need a Dockerfile.
+* `.dockerignore` is not applied (the agent builds the context itself; `.git` is always excluded).
 
 ## Phase 4a report (Docker manager)
 
@@ -27,7 +56,7 @@ Design: [ADR-0006](docs/adr/0006-docker-manager.md). Evidence: `System tests` ru
 
 * Docker on Windows (named pipe), rootless Docker and Podman: not supported or not tested.
 * No per-container CPU/memory stats, exec console, or volume/network create/delete yet.
-* Compose projects are shown but cannot be deployed: that is Phase 4b.
+* Compose projects are shown but cannot be deployed yet (deferred from Phase 4b: needs a policy validator).
 
 ### Security notes
 
@@ -195,5 +224,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 3b-1 | Logs, confined file manager | ✅ Done |
 | 3b-2 | Users / groups (view), SSH keys, scheduled tasks (view), hostname / timezone | ✅ Done |
 | 4a | Docker manager (containers, images, volumes, networks) | ✅ Done |
-| 4b | Deployments (Git, ZIP, Dockerfile, Compose), runtimes, rollback | ⏭ Next |
-| 5–14 | See [TASKS.md](TASKS.md) | Not started |
+| 4b | Git deployments (Dockerfile, static, Node.js), history, rollback | ✅ Done (ZIP, Compose, private repos deferred) |
+| 5 | Websites, reverse proxy, SSL, DNS | ⏭ Next |
+| 6–14 | See [TASKS.md](TASKS.md) | Not started |

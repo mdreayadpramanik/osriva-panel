@@ -90,6 +90,17 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Windows (Docker Desktop / named pipe) | UNSUPPORTED | `docker.info` reports "not supported" (checked in CI on Windows Server 2022). |
 | BSD | UNSUPPORTED | No Docker Engine. |
 
+### Deployments (Phase 4b)
+
+"System tests run 41507533185" is the `System tests` workflow at commit `a4d48b8` (2026-11-03).
+
+| Platform / feature | Status | Evidence / notes |
+|--------------------|--------|------------------|
+| Ubuntu 24.04 + Docker Engine + git: Git deploy, static and Node.js runtimes, rollback, recovery | SUPPORTED | System tests run 41507533185 |
+| Dockerfile build mode | PARTIALLY_SUPPORTED | Unit tests with a fake Engine; the real Engine build path is the same one used by the static and Node.js modes |
+| Git over HTTPS (GitHub, GitLab …) | NOT_TESTED | CI used a loopback dumb-HTTP server; smart HTTPS uses the same `git clone` |
+| Windows | UNSUPPORTED | No Docker support on Windows yet |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).
