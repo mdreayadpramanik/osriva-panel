@@ -520,6 +520,61 @@ kill "$FLAKY_PID" || true
 api DELETE "/alerts/rules/$RULE_ID" >/dev/null
 api DELETE "/server-groups/$GROUP_ID" >/dev/null || fail "delete group"
 
+step "Provider Mode: libvirt/KVM node, IP pool, Ubuntu cloud image, a real VPS reached over SSH, lifecycle, delete"
+# This disposable CI runner becomes a KVM host; on real hosts the agent never installs anything.
+[ -e /dev/kvm ] || fail "this runner has no /dev/kvm"
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-kvm libvirt-daemon-system genisoimage >/dev/null
+sudo systemctl start libvirtd
+sudo virsh -c qemu:///system net-info default >/dev/null 2>&1 || fail "libvirt default network missing"
+sudo virsh -c qemu:///system net-start default >/dev/null 2>&1 || true
+login
+host_ready() { task vm.host '{}' | jq -e '.status == "succeeded" and .result.available and .result.kvm and ([.result.networks[] | select(.name == "default" and .active)] | length == 1)'; }
+wait_for 60 "agent sees libvirt and KVM" host_ready || { task vm.host '{}'; fail "vm.host"; }
+api PUT /settings/panel-mode '{"mode":"provider"}' | jq -e '.panel_mode == "provider"' >/dev/null || fail "Provider Mode"
+DC_ID="$(api POST /provider/datacenters '{"name":"ci-dc","location":"GitHub Actions"}' | jq -r .id)"
+NODE_ID="$(api POST /provider/nodes "$(jq -nc --arg s "$SERVER_ID" --arg d "$DC_ID" '{server_id:$s,datacenter_id:$d,network:"default"}')" | jq -r .id)"
+[ -n "$NODE_ID" ] && [ "$NODE_ID" != null ] || fail "node"
+POOL_ID="$(api POST /provider/ip-pools "$(jq -nc --arg d "$DC_ID" '{name:"ci-nat",datacenter_id:$d,cidr:"192.168.122.0/24",gateway:"192.168.122.1",first:"192.168.122.100",last:"192.168.122.110",dns:["192.168.122.1"]}')" | jq -r .id)"
+IMG_BASE=https://cloud-images.ubuntu.com/minimal/releases/noble/release
+IMG_SHA="$(curl -fsS "$IMG_BASE/SHA256SUMS" | awk '$2 == "*ubuntu-24.04-minimal-cloudimg-amd64.img" || $2 == "ubuntu-24.04-minimal-cloudimg-amd64.img" {print $1}')"
+[ "${#IMG_SHA}" = 64 ] || fail "image checksum not found in the publisher's SHA256SUMS"
+TPL_ID="$(api POST /provider/templates "$(jq -nc --arg u "$IMG_BASE/ubuntu-24.04-minimal-cloudimg-amd64.img" --arg h "$IMG_SHA" '{name:"ubuntu-24.04-minimal",image_url:$u,image_sha256:$h,min_disk_gb:5,default_user:"ubuntu"}')" | jq -r .id)"
+VMKEY="$(mktemp -d)/id_ed25519"
+ssh-keygen -q -t ed25519 -N '' -f "$VMKEY"
+VPS="$(api POST /provider/vps "$(jq -nc --arg n "$NODE_ID" --arg t "$TPL_ID" --arg p "$POOL_ID" --arg k "$(cat "$VMKEY.pub")" '{name:"ci-vm-1",node_id:$n,template_id:$t,pool_id:$p,vcpus:1,memory_mb:1024,disk_gb:6,ssh_keys:[$k]}')")"
+VPS_ID="$(jq -r .id <<<"$VPS")"; VPS_IP="$(jq -r .ip_address <<<"$VPS")"
+[ "$VPS_IP" = 192.168.122.100 ] || fail "address: $VPS"
+vps_state() { api GET "/provider/vps/$VPS_ID" | jq -r '.state + "/" + (.pending_op // "")'; }
+vps_is() { [ "$(vps_state)" = "$1/" ]; }
+wait_for 900 "VPS running (image download, disk, cloud-init seed, boot)" vps_is running || { api GET "/provider/vps/$VPS_ID"; fail "VPS not running"; }
+sudo virsh -c qemu:///system dominfo "osriva-$VPS_ID" | grep -q 'State: *running' || fail "domain not running"
+sudo test -f "/var/lib/libvirt/images/osriva/$VPS_ID.qcow2" || fail "disk missing"
+vm_ssh() { ssh -i "$VMKEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes "ubuntu@$VPS_IP" "$@"; }
+wait_for 300 "SSH into the VPS with the injected key" vm_ssh true || { sudo virsh -c qemu:///system domifaddr "osriva-$VPS_ID" --source arp || true; fail "no SSH"; }
+[ "$(vm_ssh hostname)" = ci-vm-1 ] || fail "hostname from cloud-init"
+vm_ssh "ip -4 -o addr show" | grep -q "192.168.122.100/24" || fail "static address from cloud-init"
+! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes -o PubkeyAuthentication=no "ubuntu@$VPS_IP" true 2>/dev/null || fail 'password login must be disabled'
+# lifecycle
+api POST "/provider/vps/$VPS_ID/actions" '{"action":"shutdown"}' >/dev/null
+wait_for 240 "VPS stopped after a graceful shutdown" vps_is stopped || fail "shutdown"
+api POST "/provider/vps/$VPS_ID/actions" '{"action":"start"}' >/dev/null
+wait_for 120 "VPS running again" vps_is running || fail "start"
+wait_for 240 "SSH after the restart" vm_ssh true || fail "no SSH after start"
+api POST /provider/vps "$(jq -nc --arg n "$NODE_ID" --arg t "$TPL_ID" --arg p "$POOL_ID" --arg k "$(cat "$VMKEY.pub")" '{name:"ci-vm-big",node_id:$n,template_id:$t,pool_id:$p,vcpus:64,memory_mb:1024,disk_gb:6,ssh_keys:[$k]}')" >/dev/null 2>&1 && fail "a VPS beyond the node's capacity was accepted"
+# delete: typed name, the domain and its disk are gone, the address returns to the pool
+login # re-authentication: the boot above can outlast the 10-minute window
+! api DELETE "/provider/vps/$VPS_ID" '{"confirm":"wrong"}' >/dev/null 2>&1 || fail 'delete without the typed name'
+api DELETE "/provider/vps/$VPS_ID" '{"confirm":"ci-vm-1"}' >/dev/null || fail "delete"
+vps_gone() { ! api GET "/provider/vps/$VPS_ID" >/dev/null 2>&1; }
+wait_for 180 "VPS deleted" vps_gone || fail "VPS not deleted"
+! sudo virsh -c qemu:///system dominfo "osriva-$VPS_ID" >/dev/null 2>&1 || fail 'domain still defined'
+! sudo test -e "/var/lib/libvirt/images/osriva/$VPS_ID.qcow2" || fail 'disk still present'
+api GET /provider/ip-pools | jq -e '.pools[0].allocated | length == 0' >/dev/null || fail "address not released"
+sudo virsh -c qemu:///system net-info default | grep -q 'Active: *yes' || fail "the libvirt network must be untouched"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE action LIKE 'provider.vps_%'")" -ge 4 ] || fail "provider audit entries"
+api DELETE "/provider/nodes/$NODE_ID" >/dev/null || fail "remove node"
+api PUT /settings/panel-mode '{"mode":"personal"}' >/dev/null
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

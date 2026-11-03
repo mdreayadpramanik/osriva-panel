@@ -184,6 +184,10 @@ func RunTimeout(typ string) time.Duration {
 		return 20 * time.Minute
 	case BackupCreate, BackupVerify, BackupRestore:
 		return 60 * time.Minute // large volumes
+	case VMCreate:
+		return 30 * time.Minute // image download and first boot
+	case VMAction, VMDelete:
+		return 5 * time.Minute
 	case CMSWPInstall, CMSWPUpdate:
 		return 15 * time.Minute // image downloads, WordPress updates
 	case ProxyApply:
@@ -197,7 +201,8 @@ func RunTimeout(typ string) time.Duration {
 // LongRunning tasks run beside the agent's normal task loop so that they do
 // not hold up quick tasks.
 func LongRunning(typ string) bool {
-	return typ == AppDeploy || typ == CMSWPInstall || typ == CMSWPUpdate || typ == BackupCreate || typ == BackupVerify || typ == BackupRestore
+	return typ == AppDeploy || typ == CMSWPInstall || typ == CMSWPUpdate || typ == BackupCreate || typ == BackupVerify || typ == BackupRestore ||
+		typ == VMCreate
 }
 
 type AppDeployResult struct {

@@ -51,6 +51,12 @@ type Store struct {
 	batches     map[string]*store.TaskBatch
 	jobs        map[string]*store.Job
 	leases      map[string]lease
+	dcs         map[string]*store.Datacenter
+	racks       map[string]*store.Rack
+	nodes       map[string]*store.Node
+	pools       map[string]*store.IPPool
+	templates   map[string]*store.VMTemplate
+	vps         map[string]*store.VPS
 }
 
 var _ store.Store = (*Store)(nil)
@@ -69,6 +75,8 @@ func New() *Store {
 		alertStates: map[[2]string]*store.AlertState{}, rollups: map[string][]store.MetricRollup{},
 		groups: map[string]*store.ServerGroup{}, batches: map[string]*store.TaskBatch{}, jobs: map[string]*store.Job{},
 		leases: map[string]lease{},
+		dcs:    map[string]*store.Datacenter{}, racks: map[string]*store.Rack{}, nodes: map[string]*store.Node{},
+		pools: map[string]*store.IPPool{}, templates: map[string]*store.VMTemplate{}, vps: map[string]*store.VPS{},
 	}
 }
 

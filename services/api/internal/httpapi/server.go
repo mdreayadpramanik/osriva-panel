@@ -15,6 +15,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provider"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/openapi"
 )
@@ -28,6 +29,7 @@ type Options struct {
 	Fleet          *fleet.Service
 	Monitor        *monitor.Service
 	Jobs           *jobs.Queue
+	Provider       *provider.Service
 	AgentDist      *agentdist.Dist
 	DB             Pinger
 	Log            *slog.Logger
@@ -44,6 +46,7 @@ type Server struct {
 	fleet          *fleet.Service
 	monitor        *monitor.Service
 	jobs           *jobs.Queue
+	provider       *provider.Service
 	dist           *agentdist.Dist
 	db             Pinger
 	log            *slog.Logger
@@ -56,7 +59,7 @@ type Server struct {
 
 func New(o Options) http.Handler {
 	s := &Server{
-		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, jobs: o.Jobs, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
+		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, jobs: o.Jobs, provider: o.Provider, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
 		sessionTTL: o.SessionTTL, trustedProxies: o.TrustedProxies, apiLimiter: o.APILimiter,
 	}
 	if s.log == nil {
@@ -148,6 +151,7 @@ func (s *Server) routes() http.Handler {
 			r.Post("/fleet/batches", s.handleRunBatch)
 			r.Get("/fleet/batches/{batchId}", s.handleGetBatch)
 			r.Get("/jobs", s.handleJobs)
+			s.providerRoutes(r)
 			r.Get("/servers", s.handleListServers)
 			r.Post("/servers", s.handleCreateServer)
 			r.Get("/servers/agent-endpoint", s.handleAgentEndpointInfo)

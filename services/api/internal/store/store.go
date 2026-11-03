@@ -124,6 +124,7 @@ type Store interface {
 	MonitorStore
 	FleetStore
 	JobStore
+	ProviderStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -655,4 +656,123 @@ type JobStore interface {
 	// ReleaseLeases drops every lease of holder (graceful shutdown), so another
 	// process or the restarted one takes over at once.
 	ReleaseLeases(ctx context.Context, holder string) error
+}
+
+// ---- Provider Mode: infrastructure and VPS (Phase 10) ----
+
+type Datacenter struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	Location       string
+	CreatedAt      time.Time
+}
+
+type Rack struct {
+	ID           string
+	DatacenterID string
+	Name         string
+	Units        int
+	CreatedAt    time.Time
+}
+
+// Node is an enrolled server used as a libvirt/KVM hypervisor.
+type Node struct {
+	ID               string
+	OrganizationID   string
+	ServerID         string
+	DatacenterID     string
+	RackID           *string
+	Hypervisor       string
+	Network          string
+	CPUOvercommit    float64
+	MemoryOvercommit float64
+	Enabled          bool
+	CreatedAt        time.Time
+}
+
+type IPPool struct {
+	ID             string
+	OrganizationID string
+	DatacenterID   *string
+	Name           string
+	CIDR           string // e.g. 192.168.122.0/24
+	Gateway        string
+	First, Last    string
+	DNS            []string
+	CreatedAt      time.Time
+}
+
+type VMTemplate struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	ImageURL       string
+	ImageSHA256    string
+	MinDiskGB      int
+	DefaultUser    string
+	CreatedAt      time.Time
+}
+
+type VPS struct {
+	ID             string
+	OrganizationID string
+	NodeID         string
+	TemplateID     *string
+	PoolID         string
+	Name           string
+	VCPUs          int
+	MemoryMB       int
+	DiskGB         int
+	IPAddress      string
+	SSHKeys        []string
+	State          string // creating | running | stopped | error | deleting
+	PendingTaskID  *string
+	PendingOp      string
+	LastError      string
+	CreatedBy      *string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+// ProviderStore persists Provider Mode infrastructure. Names are unique per
+// organization (racks per data center): ErrConflict. Deleting a record that
+// others still reference returns ErrConflict.
+type ProviderStore interface {
+	CreateDatacenter(ctx context.Context, d *Datacenter) error
+	GetDatacenter(ctx context.Context, id string) (*Datacenter, error)
+	ListDatacenters(ctx context.Context, orgID string) ([]Datacenter, error)
+	DeleteDatacenter(ctx context.Context, id string) error
+
+	CreateRack(ctx context.Context, r *Rack) error
+	GetRack(ctx context.Context, id string) (*Rack, error)
+	ListRacks(ctx context.Context, datacenterID string) ([]Rack, error)
+	DeleteRack(ctx context.Context, id string) error
+
+	CreateNode(ctx context.Context, n *Node) error
+	GetNode(ctx context.Context, id string) (*Node, error)
+	ListNodes(ctx context.Context, orgID string) ([]Node, error)
+	DeleteNode(ctx context.Context, id string) error
+
+	CreateIPPool(ctx context.Context, p *IPPool) error
+	GetIPPool(ctx context.Context, id string) (*IPPool, error)
+	ListIPPools(ctx context.Context, orgID string) ([]IPPool, error)
+	DeleteIPPool(ctx context.Context, id string) error
+	// ListPoolAddresses returns the allocated addresses of a pool.
+	ListPoolAddresses(ctx context.Context, poolID string) ([]string, error)
+
+	CreateVMTemplate(ctx context.Context, t *VMTemplate) error
+	GetVMTemplate(ctx context.Context, id string) (*VMTemplate, error)
+	ListVMTemplates(ctx context.Context, orgID string) ([]VMTemplate, error)
+	DeleteVMTemplate(ctx context.Context, id string) error
+
+	// CreateVPS stores the VPS and allocates its address in one transaction;
+	// ErrConflict when the name or the address is taken.
+	CreateVPS(ctx context.Context, v *VPS) error
+	GetVPS(ctx context.Context, id string) (*VPS, error)
+	ListVPS(ctx context.Context, orgID string) ([]VPS, error)
+	ListNodeVPS(ctx context.Context, nodeID string) ([]VPS, error)
+	SetVPSState(ctx context.Context, id, state string, pendingTaskID *string, pendingOp, lastError string) error
+	// DeleteVPS removes the VPS and releases its address.
+	DeleteVPS(ctx context.Context, id string) error
 }

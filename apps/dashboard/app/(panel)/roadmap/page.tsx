@@ -11,7 +11,7 @@ const phases: { phase: number; title: string; status: "available" | "in-progress
   { phase: 7, title: "Data", status: "in-progress", items: ["Encrypted, verified backups & restore", "Backup schedules with retention", "Database manager and remote storage (planned)"] },
   { phase: 8, title: "Monitoring & automation", status: "in-progress", items: ["Metrics, rollups & alerts", "Signed webhook and e-mail notifications", "Audit retention", "Automation and silences (planned)"] },
   { phase: 9, title: "Fleet", status: "in-progress", items: ["Server groups", "One task on many servers (batches)", "Durable job queue with retries", "Shared rate limits through Redis (optional)"] },
-  { phase: 10, title: "Hosting Provider Mode", status: "planned", items: ["Data centers, sites, racks, nodes", "Resource & IP pools", "Proxmox / libvirt / OpenStack / CloudStack / vSphere adapters", "VPS management"] },
+  { phase: 10, title: "Hosting Provider Mode", status: "in-progress", items: ["Data centers, racks, nodes, IPv4 pools, templates", "libvirt/KVM adapter with VPS create, start, shutdown, reboot, delete", "Proxmox VE adapter (planned, needs a test server)", "OpenStack, CloudStack, vSphere (planned)"] },
   { phase: 11, title: "Provisioning", status: "planned", items: ["Web hosting backend adapters", "Technical resource templates", "Signed provisioning API & webhooks for external billing systems"] },
   { phase: 12, title: "Customer Panel", status: "planned", items: ["Separate customer dashboard", "Strict tenant isolation", "Service controls"] },
   { phase: 13, title: "Ecosystem", status: "planned", items: ["Plugin SDK", "Third-party adapters", "Developer documentation"] },

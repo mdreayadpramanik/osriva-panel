@@ -35,6 +35,7 @@ tags:
   - name: servers
   - name: agent
   - name: fleet
+  - name: provider
 
 components:
   securitySchemes:
@@ -1101,3 +1102,129 @@ paths:
       responses:
         "200": { description: "`{counts: {queued, running, succeeded, failed}, recent_failures: [...]}`" }
         "503": { description: The job queue is not running }
+  /provider/datacenters:
+    get:
+      tags: [provider]
+      summary: Data centers (provider.read)
+      responses:
+        "200": { description: "`{datacenters: [{id, name, location, created_at}]}`" }
+    post:
+      tags: [provider]
+      summary: "Add a data center (provider.write; the panel must be in Provider Mode): {name, location}"
+      responses:
+        "201": { description: Data center }
+        "409": { description: Provider Mode is off }
+  /provider/datacenters/{dcId}:
+    parameters: [{ name: dcId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provider]
+      summary: Delete a data center (provider.write); refused while racks, nodes or pools use it
+      responses:
+        "204": { description: Deleted }
+  /provider/datacenters/{dcId}/racks:
+    parameters: [{ name: dcId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [provider]
+      summary: Racks of a data center (provider.read)
+      responses:
+        "200": { description: "`{racks: [{id, datacenter_id, name, units}]}`" }
+  /provider/racks:
+    post:
+      tags: [provider]
+      summary: "Add a rack (provider.write): {datacenter_id, name, units 1-100}"
+      responses:
+        "201": { description: Rack }
+  /provider/racks/{rackId}:
+    parameters: [{ name: rackId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provider]
+      summary: Delete a rack (provider.write); refused while nodes use it
+      responses:
+        "204": { description: Deleted }
+  /provider/nodes:
+    get:
+      tags: [provider]
+      summary: Hypervisor nodes with capacity (inventory × overcommit) and use (provider.read)
+      responses:
+        "200": { description: "`{nodes: [{id, server_id, server_name, connection, network, vcpus, memory_mb, used_vcpus, used_memory_mb, vps_count, …}]}`" }
+    post:
+      tags: [provider]
+      summary: "Register an enrolled Linux server as a libvirt/KVM node (provider.write): {server_id, datacenter_id, rack_id?, network (default), cpu_overcommit 1-16 (4), memory_overcommit 1-4 (1)}"
+      responses:
+        "201": { description: Node }
+  /provider/nodes/{nodeId}:
+    parameters: [{ name: nodeId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provider]
+      summary: Remove a node from Provider Mode (provider.write); refused while it has VPS. The server itself is untouched.
+      responses:
+        "204": { description: Deleted }
+  /provider/ip-pools:
+    get:
+      tags: [provider]
+      summary: IPv4 pools with size and allocated addresses (provider.read)
+      responses:
+        "200": { description: "`{pools: [{id, name, cidr, gateway, first, last, dns, size, allocated}]}`" }
+    post:
+      tags: [provider]
+      summary: "Add a pool (provider.write): {name, datacenter_id?, cidr, gateway, first, last, dns[≤3]}"
+      responses:
+        "201": { description: Pool }
+  /provider/ip-pools/{poolId}:
+    parameters: [{ name: poolId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provider]
+      summary: Delete a pool (provider.write); refused while addresses are allocated
+      responses:
+        "204": { description: Deleted }
+  /provider/templates:
+    get:
+      tags: [provider]
+      summary: VM templates (provider.read)
+      responses:
+        "200": { description: "`{templates: [{id, name, image_url, image_sha256, min_disk_gb, default_user}]}`" }
+    post:
+      tags: [provider]
+      summary: "Add a cloud image template (provider.write): {name, image_url (https), image_sha256, min_disk_gb, default_user}"
+      responses:
+        "201": { description: Template }
+  /provider/templates/{templateId}:
+    parameters: [{ name: templateId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provider]
+      summary: Delete a template (provider.write); existing VPS keep running
+      responses:
+        "204": { description: Deleted }
+  /provider/vps:
+    get:
+      tags: [provider]
+      summary: VPS with their state (provider.read)
+      responses:
+        "200": { description: "`{vps: [{id, name, node_id, ip_address, state, pending_op, last_error, …}]}`" }
+    post:
+      tags: [provider]
+      summary: >-
+        Create a VPS (provider.write + servers.operate): {name, node_id, template_id, pool_id, vcpus, memory_mb,
+        disk_gb, ssh_keys[1-10]}. The lowest free pool address is allocated and vm.create is queued on the node.
+      responses:
+        "202": { description: VPS in state creating }
+        "409": { description: Capacity, pool exhausted, or Provider Mode is off }
+  /provider/vps/{vpsId}:
+    parameters: [{ name: vpsId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [provider]
+      summary: One VPS; a finished pending task is applied when it is read (provider.read)
+      responses:
+        "200": { description: VPS }
+    delete:
+      tags: [provider]
+      summary: "Destroy the VPS and its disk (provider.write + re-auth): {confirm: <VPS name>}; the address is released when the node confirms"
+      responses:
+        "202": { description: VPS in state deleting }
+  /provider/vps/{vpsId}/actions:
+    parameters: [{ name: vpsId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [provider]
+      summary: "{action: start | shutdown | reboot | stop} (provider.write; stop = force off, needs re-auth)"
+      responses:
+        "202": { description: VPS with the pending operation }

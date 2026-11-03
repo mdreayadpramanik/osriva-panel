@@ -30,6 +30,7 @@ var Types = map[string]bool{
 	ProxyStatus: true, ProxyApply: true, ProxyDisable: true,
 	CMSWPInstall: true, CMSWPInfo: true, CMSWPVerify: true, CMSWPUpdate: true, CMSRemove: true,
 	BackupCreate: true, BackupList: true, BackupVerify: true, BackupRestore: true, BackupDelete: true,
+	VMHost: true, VMList: true, VMCreate: true, VMAction: true, VMDelete: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
@@ -42,6 +43,9 @@ func ReadOnly(typ string) bool {
 	}
 	if backupTask(typ) {
 		return backupReadOnly(typ)
+	}
+	if vmTask(typ) {
+		return vmReadOnly(typ)
 	}
 	if dockerTask(typ) {
 		return dockerReadOnly(typ)
@@ -133,6 +137,8 @@ func Validate(typ string, params json.RawMessage) error {
 		return validateCMS(typ, params)
 	case BackupCreate, BackupList, BackupVerify, BackupRestore, BackupDelete:
 		return validateBackup(typ, params)
+	case VMHost, VMList, VMCreate, VMAction, VMDelete:
+		return validateVM(typ, params)
 	default:
 		return validateSystem(typ, params)
 	}

@@ -7,13 +7,15 @@ import { useSession } from "./session";
 import { ThemeToggle } from "./theme";
 import { Badge, cx } from "./ui";
 
-type NavItem = { href: string; label: string; permission?: string };
+type NavItem = { href: string; label: string; permission?: string; providerMode?: boolean };
 
 // Only modules with a working backend are listed. Everything else is on the Roadmap page.
 const nav: NavItem[] = [
   { href: "/", label: "Overview" },
   { href: "/servers", label: "Servers", permission: "servers.read" },
   { href: "/fleet", label: "Fleet", permission: "servers.read" },
+  { href: "/provider", label: "Infrastructure", permission: "provider.read", providerMode: true },
+  { href: "/vps", label: "VPS", permission: "provider.read", providerMode: true },
   { href: "/users", label: "Users & Permissions", permission: "users.read" },
   { href: "/alerts", label: "Alerts", permission: "alerts.read" },
   { href: "/audit", label: "Audit Log", permission: "audit.read" },
@@ -43,7 +45,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => setOpen(false), [pathname]);
 
-  const items = nav.filter((i) => !i.permission || can(i.permission));
+  const items = nav.filter((i) => (!i.permission || can(i.permission)) && (!i.providerMode || me.panel_mode === "provider"));
   const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
 
   const sidebar = (

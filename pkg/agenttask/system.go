@@ -48,6 +48,8 @@ func Class(typ string) string {
 		return ClassOperate
 	case backupTask(typ) && !backupReadOnly(typ):
 		return ClassOperate
+	case vmTask(typ) && !vmReadOnly(typ):
+		return ClassOperate
 	}
 	return ClassRead
 }
@@ -60,6 +62,12 @@ func NeedsReauth(typ string, params json.RawMessage) bool {
 	switch typ {
 	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable, CMSWPInstall, CMSWPUpdate, CMSRemove, BackupRestore, BackupDelete:
 		return true
+	case VMDelete:
+		return true
+	case VMAction:
+		var p VMActionParams
+		_ = json.Unmarshal(params, &p)
+		return p.Action == VMStop
 	case ServiceAction:
 		var p ServiceActionParams
 		_ = json.Unmarshal(params, &p)

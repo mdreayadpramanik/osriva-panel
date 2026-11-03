@@ -484,3 +484,66 @@ export type JobQueueStatus = {
   counts: Record<"queued" | "running" | "succeeded" | "failed", number>;
   recent_failures: { id: string; kind: string; status: string; attempts: number; max_attempts: number; last_error: string; created_at: string; updated_at: string }[];
 };
+
+export type Datacenter = { id: string; name: string; location: string; created_at: string };
+export type Rack = { id: string; datacenter_id: string; name: string; units: number };
+export type HVNode = {
+  id: string;
+  server_id: string;
+  server_name: string;
+  connection: Connection | "";
+  datacenter_id: string;
+  rack_id: string | null;
+  hypervisor: "libvirt";
+  network: string;
+  cpu_overcommit: number;
+  memory_overcommit: number;
+  enabled: boolean;
+  vcpus: number;
+  memory_mb: number;
+  used_vcpus: number;
+  used_memory_mb: number;
+  vps_count: number;
+};
+export type IPPool = {
+  id: string;
+  name: string;
+  datacenter_id: string | null;
+  cidr: string;
+  gateway: string;
+  first: string;
+  last: string;
+  dns: string[];
+  size: number;
+  allocated: string[];
+};
+export type VMTemplate = { id: string; name: string; image_url: string; image_sha256: string; min_disk_gb: number; default_user: string };
+export type VPS = {
+  id: string;
+  name: string;
+  node_id: string;
+  template_id: string | null;
+  pool_id: string;
+  vcpus: number;
+  memory_mb: number;
+  disk_gb: number;
+  ip_address: string;
+  ssh_keys: string[];
+  state: "creating" | "running" | "stopped" | "error" | "deleting";
+  pending_task_id: string | null;
+  pending_op: string;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+};
+export type VMHostInfo = {
+  available: boolean;
+  reason?: string;
+  kvm: boolean;
+  libvirt_version?: string;
+  iso_tool?: string;
+  networks: { name: string; active: boolean }[];
+  free_disk_bytes: number;
+  cpus: number;
+  memory_bytes: number;
+};
