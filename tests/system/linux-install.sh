@@ -550,7 +550,13 @@ wait_for 900 "VPS running (image download, disk, cloud-init seed, boot)" vps_is 
 sudo virsh -c qemu:///system dominfo "osriva-$VPS_ID" | grep -q 'State: *running' || fail "domain not running"
 sudo test -f "/var/lib/libvirt/images/osriva/$VPS_ID.qcow2" || fail "disk missing"
 vm_ssh() { ssh -i "$VMKEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes "ubuntu@$VPS_IP" "$@"; }
-wait_for 300 "SSH into the VPS with the injected key" vm_ssh true || { sudo virsh -c qemu:///system domifaddr "osriva-$VPS_ID" --source arp || true; fail "no SSH"; }
+vm_diag() {
+	sudo tail -n 80 "/var/log/libvirt/qemu/osriva-$VPS_ID-console.log" || true
+	ip -4 addr show virbr0 || true; ping -c 2 -W 2 "$VPS_IP" || true; ip neigh show dev virbr0 || true
+	sudo iptables -S | grep -iE "virbr|FORWARD|INPUT" | head -30 || true
+	sudo virsh -c qemu:///system dumpxml "osriva-$VPS_ID" | grep -E "interface|mac|source|serial|log" || true
+}
+wait_for 300 "SSH into the VPS with the injected key" vm_ssh true || { vm_diag; fail "no SSH"; }
 [ "$(vm_ssh hostname)" = ci-vm-1 ] || fail "hostname from cloud-init"
 vm_ssh "ip -4 -o addr show" | grep -q "192.168.122.100/24" || fail "static address from cloud-init"
 ! ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o BatchMode=yes -o PubkeyAuthentication=no "ubuntu@$VPS_IP" true 2>/dev/null || fail 'password login must be disabled'

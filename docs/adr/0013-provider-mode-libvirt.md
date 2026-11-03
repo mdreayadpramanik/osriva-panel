@@ -78,6 +78,8 @@ OSRIVA did not create.
     acts on domains it did not create.
   * The MAC address is derived from the VPS id.
   * Devices: virtio disk and NIC, serial console, `host-passthrough` CPU.
+  * The serial console (boot and cloud-init output) is kept by virtlogd in
+    `/var/log/libvirt/qemu/osriva-<id>-console.log` and removed with the VPS.
   * The node's existing libvirt network is used; the agent never creates or changes
     networks, bridges or firewall rules.
 * **State:** each lifecycle task returns the domain state afterwards. The panel records

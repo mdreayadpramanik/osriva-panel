@@ -259,12 +259,12 @@ func DomainXML(p agenttask.VMCreateParams, disk, seed string) string {
     <disk type='file' device='disk'><driver name='qemu' type='qcow2'/><source file='%s'/><target dev='vda' bus='virtio'/></disk>
     <disk type='file' device='cdrom'><driver name='qemu' type='raw'/><source file='%s'/><target dev='sda' bus='sata'/><readonly/></disk>
     <interface type='network'><source network='%s'/><mac address='%s'/><model type='virtio'/></interface>
-    <serial type='pty'/>
+    <serial type='pty'><log file='%s' append='off'/></serial>
     <console type='pty'/>
     <rng model='virtio'><backend model='random'>/dev/urandom</backend></rng>
   </devices>
 </domain>
-`, esc(agenttask.VMDomainName(p.ID)), vmMetadataNS, esc(p.ID), p.MemoryMB, p.VCPUs, esc(disk), esc(seed), esc(p.Network), VMMAC(p.ID))
+`, esc(agenttask.VMDomainName(p.ID)), vmMetadataNS, esc(p.ID), p.MemoryMB, p.VCPUs, esc(disk), esc(seed), esc(p.Network), VMMAC(p.ID), esc(VMConsoleLog(p.ID)))
 }
 
 // CloudInit returns the NoCloud user-data, meta-data and network-config. They
@@ -521,6 +521,7 @@ func vmDelete(ctx context.Context, id string) (any, error) {
 			return nil, err
 		}
 	}
+	_ = os.Remove(VMConsoleLog(id))
 	return agenttask.VMResult{ID: id, State: "deleted", Deleted: true}, nil
 }
 
@@ -532,4 +533,10 @@ func mkdirTraversable(dir string) error {
 		return err
 	}
 	return os.Chmod(dir, 0o711)
+}
+
+// VMConsoleLog is where libvirt's virtlogd keeps the guest's serial console
+// (boot and cloud-init output), in libvirt's own log directory.
+func VMConsoleLog(id string) string {
+	return "/var/log/libvirt/qemu/" + agenttask.VMDomainName(id) + "-console.log"
 }
