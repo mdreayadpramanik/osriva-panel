@@ -291,7 +291,7 @@ func CloudInit(p agenttask.VMCreateParams) (userData, metaData, networkConfig []
 // verifying it first when needed.
 func fetchImage(ctx context.Context, rawURL, sum string) (string, error) {
 	dir := filepath.Join(vmRoot, "base")
-	if err := os.MkdirAll(dir, 0o711); err != nil {
+	if err := mkdirTraversable(dir); err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, sum+".img")
@@ -364,7 +364,7 @@ func vmCreate(ctx context.Context, p agenttask.VMCreateParams) (any, error) {
 	if !contains(lines(nets), p.Network) {
 		return nil, fmt.Errorf("libvirt network %q does not exist or is not active on this host", p.Network)
 	}
-	if err := os.MkdirAll(vmRoot, 0o711); err != nil {
+	if err := mkdirTraversable(vmRoot); err != nil {
 		return nil, err
 	}
 	step("fetching image " + p.ImageSHA256[:12])
@@ -522,4 +522,14 @@ func vmDelete(ctx context.Context, id string) (any, error) {
 		}
 	}
 	return agenttask.VMResult{ID: id, State: "deleted", Deleted: true}, nil
+}
+
+// mkdirTraversable creates dir with mode 0711 regardless of the agent's umask
+// (0077 under systemd): QEMU runs as its own user and must traverse it, while
+// listing stays root-only.
+func mkdirTraversable(dir string) error {
+	if err := os.MkdirAll(dir, 0o711); err != nil {
+		return err
+	}
+	return os.Chmod(dir, 0o711)
 }

@@ -183,6 +183,12 @@ func TestVMActionsOnlyTouchOwnedDomains(t *testing.T) {
 	if err != nil || len(list.(agenttask.VMListResult).VMs) != 1 || list.(agenttask.VMListResult).VMs[0].ID != vmTestID {
 		t.Fatalf("list shows only owned domains: %+v %v", list, err)
 	}
+	if err := mkdirTraversable(filepath.Join(vmRoot, "x")); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := os.Stat(filepath.Join(vmRoot, "x")); st.Mode().Perm() != 0o711 {
+		t.Fatalf("VM directories must be traversable by QEMU: %v", st.Mode())
+	}
 	disk, seed, def := vmPaths(vmTestID)
 	for _, p := range []string{disk, seed, def} {
 		_ = os.WriteFile(p, []byte("x"), 0o600)
