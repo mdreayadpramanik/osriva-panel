@@ -124,6 +124,11 @@ func redactMap(md map[string]any) {
 		delete(md, "env")
 		md["env_names"] = names
 	}
+	for k := range md {
+		if strings.Contains(strings.ToLower(k), "password") {
+			md[k] = "[redacted]"
+		}
+	}
 	for _, v := range md {
 		if sub, ok := v.(map[string]any); ok {
 			redactMap(sub)

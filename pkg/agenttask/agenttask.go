@@ -28,12 +28,16 @@ var Types = map[string]bool{
 	DockerImages: true, DockerImagePull: true, DockerImageRemove: true, DockerImagesPrune: true, DockerVolumes: true, DockerNetworks: true,
 	AppDeploy: true, AppRemove: true,
 	ProxyStatus: true, ProxyApply: true, ProxyDisable: true,
+	CMSWPInstall: true, CMSWPInfo: true, CMSWPVerify: true, CMSWPUpdate: true, CMSRemove: true,
 }
 
 // ReadOnly reports whether a task type only reads state.
 func ReadOnly(typ string) bool {
 	if typ == ProxyStatus {
 		return true
+	}
+	if cmsTask(typ) {
+		return cmsReadOnly(typ)
 	}
 	if dockerTask(typ) {
 		return dockerReadOnly(typ)
@@ -121,6 +125,8 @@ func Validate(typ string, params json.RawMessage) error {
 		return validateApp(typ, params)
 	case ProxyStatus, ProxyApply, ProxyDisable:
 		return validateProxy(typ, params)
+	case CMSWPInstall, CMSWPInfo, CMSWPVerify, CMSWPUpdate, CMSRemove:
+		return validateCMS(typ, params)
 	default:
 		return validateSystem(typ, params)
 	}

@@ -38,6 +38,7 @@ type Store struct {
 	deployments map[string]*store.Deployment
 	proxies     map[string]*store.ProxySettings // by server ID
 	sites       map[string]*store.Site
+	cms         map[string]*store.CMSInstance
 }
 
 var _ store.Store = (*Store)(nil)
@@ -50,7 +51,7 @@ func New() *Store {
 		servers: map[string]*store.Server{}, certs: map[string]*store.AgentCertificate{},
 		inventory: map[string]*store.ServerInventory{}, tasks: map[string]*store.Task{},
 		metrics: map[string][]store.MetricSample{}, apps: map[string]*store.App{}, deployments: map[string]*store.Deployment{},
-		proxies: map[string]*store.ProxySettings{}, sites: map[string]*store.Site{},
+		proxies: map[string]*store.ProxySettings{}, sites: map[string]*store.Site{}, cms: map[string]*store.CMSInstance{},
 	}
 }
 

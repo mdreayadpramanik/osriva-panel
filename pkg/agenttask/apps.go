@@ -182,6 +182,8 @@ func RunTimeout(typ string) time.Duration {
 	switch typ {
 	case AppDeploy:
 		return 20 * time.Minute
+	case CMSWPInstall, CMSWPUpdate:
+		return 15 * time.Minute // image downloads, WordPress updates
 	case ProxyApply:
 		return 6 * time.Minute // may pull the Caddy image
 	case DockerImagePull, DockerContainerRun:
@@ -192,7 +194,9 @@ func RunTimeout(typ string) time.Duration {
 
 // LongRunning tasks run beside the agent's normal task loop so that they do
 // not hold up quick tasks.
-func LongRunning(typ string) bool { return typ == AppDeploy }
+func LongRunning(typ string) bool {
+	return typ == AppDeploy || typ == CMSWPInstall || typ == CMSWPUpdate
+}
 
 type AppDeployResult struct {
 	App           string `json:"app"`

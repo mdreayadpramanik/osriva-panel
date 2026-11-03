@@ -332,6 +332,35 @@ curl -s -m 3 -o /dev/null http://127.0.0.1:18880/ && fail "port 18880 still serv
 task docker.container.action '{"id":"osriva-ci-upstream","action":"stop"}' >/dev/null
 task docker.container.action '{"id":"osriva-ci-upstream","action":"remove"}' >/dev/null
 
+step "CMS: WordPress from the official images, WP-CLI install, checksums, update, remove"
+login
+WP="$(api POST "/servers/$SERVER_ID/cms/wordpress" '{"name":"ciwp","title":"OSRIVA CI blog","admin_user":"ciadmin","admin_email":"ci@example.com","host_port":18095}')"
+WP_ID="$(jq -r .instance.id <<<"$WP")"
+WP_PASS="$(jq -r .admin_password <<<"$WP")"
+[ "${#WP_PASS}" -ge 16 ] || fail "no admin password returned"
+INSTALL="$(wait_task "$(jq -r .task.id <<<"$WP")")"
+jq -e '.status == "succeeded" and .result.ok == true' <<<"$INSTALL" >/dev/null || fail "WordPress install: $INSTALL"
+curl -fsS http://127.0.0.1:18095/ | grep -q "OSRIVA CI blog" || fail "front page"
+LOGIN="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b 'wordpress_test_cookie=WP%20Cookie%20check' \
+	--data-urlencode 'log=ciadmin' --data-urlencode "pwd=$WP_PASS" -d 'testcookie=1' http://127.0.0.1:18095/wp-login.php)"
+case "$LOGIN" in 302*wp-admin*) ;; *) fail "admin login with the generated password: $LOGIN" ;; esac
+[ -z "$(sudo docker port osriva-wp-ciwp-db)" ] || fail "database port published"
+[ "$(sudo docker inspect -f '{{(index (index .HostConfig.PortBindings "80/tcp") 0).HostIp}}' osriva-wp-ciwp)" = 127.0.0.1 ] || fail "WordPress not on loopback"
+
+INFO="$(task cms.wp.info '{"name":"ciwp"}')"
+jq -e '.status == "succeeded" and .result.installed == true and (.result.core_version | startswith("6.")) and ([.result.plugins[] | select(.name == "akismet")] | length == 1) and .result.site_url == "http://127.0.0.1:18095"' <<<"$INFO" >/dev/null || fail "info: $INFO"
+VERIFY="$(task cms.wp.verify '{"name":"ciwp"}' 6)"
+jq -e '.status == "succeeded" and .result.ok == true' <<<"$VERIFY" >/dev/null || fail "checksum verification: $VERIFY"
+task cms.wp.update '{"name":"ciwp","target":"plugins"}' 12 | jq -e '.status == "succeeded"' >/dev/null || fail "plugin update"
+[ "$(pg "SELECT count(*) FROM agent_tasks WHERE params::text LIKE '%$WP_PASS%'")" = 0 ] || fail "admin password kept in agent_tasks"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE metadata::text LIKE '%$WP_PASS%'")" = 0 ] || fail "admin password in the audit log"
+
+wait_task "$(api DELETE "/servers/$SERVER_ID/cms/$WP_ID" | jq -r .id)" | jq -e '.status == "succeeded" and .result.data_deleted == false' >/dev/null || fail "remove keeping data"
+sudo docker inspect osriva-wp-ciwp >/dev/null 2>&1 && fail "WordPress container left"
+sudo docker volume inspect osriva-wp-ciwp-db >/dev/null || fail "data volume removed although it should be kept"
+task cms.remove '{"name":"ciwp","delete_data":true}' | jq -e '.status == "succeeded" and .result.data_deleted == true' >/dev/null || fail "remove data"
+sudo docker volume inspect osriva-wp-ciwp-db >/dev/null 2>&1 && fail "data volume left"
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

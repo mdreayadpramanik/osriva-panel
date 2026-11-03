@@ -143,6 +143,10 @@ func (s *Server) routes() http.Handler {
 			r.Post("/servers/{id}/sites", s.handleCreateSite)
 			r.Put("/servers/{id}/sites/{siteId}", s.handleUpdateSite)
 			r.Delete("/servers/{id}/sites/{siteId}", s.handleDeleteSite)
+			r.Get("/servers/{id}/cms", s.handleListCMS)
+			r.Post("/servers/{id}/cms/wordpress", s.handleInstallWordPress)
+			r.Get("/servers/{id}/cms/{cmsId}", s.handleGetCMS)
+			r.Delete("/servers/{id}/cms/{cmsId}", s.handleDeleteCMS)
 		})
 	})
 	return r

@@ -119,6 +119,7 @@ type Store interface {
 	TaskStore
 	AppStore
 	ProxyStore
+	CMSStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -366,4 +367,30 @@ type ProxyStore interface {
 	ListSites(ctx context.Context, serverID string) ([]Site, error)
 	UpdateSite(ctx context.Context, s *Site) error
 	DeleteSite(ctx context.Context, id string) error
+}
+
+// ---- CMS instances (Phase 6) ----
+
+type CMSInstance struct {
+	ID            string
+	ServerID      string
+	Kind          string
+	Name          string
+	Title         string
+	URL           string
+	HostPort      int
+	AdminUser     string
+	AdminEmail    string
+	InstallTaskID *string
+	SiteID        *string
+	CreatedBy     *string
+	CreatedAt     time.Time
+}
+
+// CMSStore persists CMS instances; name and host port are unique per server (ErrConflict).
+type CMSStore interface {
+	CreateCMS(ctx context.Context, c *CMSInstance) error
+	GetCMS(ctx context.Context, id string) (*CMSInstance, error)
+	ListCMS(ctx context.Context, serverID string) ([]CMSInstance, error)
+	DeleteCMS(ctx context.Context, id string) error
 }

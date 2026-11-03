@@ -656,7 +656,7 @@ paths:
               type: object
               required: [type]
               properties:
-                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete, users.list, sshkeys.list, sshkeys.add, sshkeys.remove, cron.list, system.time, system.hostname, system.timezone, docker.info, docker.containers, docker.container.action, docker.container.logs, docker.container.run, docker.images, docker.image.pull, docker.image.remove, docker.images.prune, docker.volumes, docker.networks] }
+                type: { type: string, enum: [services.list, service.action, processes.list, logs.read, files.list, files.read, files.write, files.mkdir, files.delete, users.list, sshkeys.list, sshkeys.add, sshkeys.remove, cron.list, system.time, system.hostname, system.timezone, docker.info, docker.containers, docker.container.action, docker.container.logs, docker.container.run, docker.images, docker.image.pull, docker.image.remove, docker.images.prune, docker.volumes, docker.networks, proxy.status, cms.wp.info, cms.wp.verify, cms.wp.update, cms.remove] }
                 params: { type: object }
             example: { type: service.action, params: { name: nginx.service, action: restart } }
       responses:
@@ -806,6 +806,49 @@ paths:
       summary: Stop serving a website (servers.operate + re-auth)
       responses:
         "200": { description: "`{task}`" }
+  /servers/{id}/cms:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [cms]
+      summary: CMS instances of a server with their install status (servers.read)
+      responses:
+        "200": { description: "`{instances: [{id, kind, name, title, url, host_port, admin_user, admin_email, domain, install_status, install_error}]}`" }
+  /servers/{id}/cms/wordpress:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [cms]
+      summary: Install WordPress (servers.operate + re-auth). The generated admin password is returned once and never stored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, title, admin_user, admin_email, host_port]
+              properties:
+                name: { type: string }
+                title: { type: string }
+                admin_user: { type: string }
+                admin_email: { type: string }
+                host_port: { type: integer }
+                domain: { type: string, description: "Optional; also creates a website" }
+                tls_mode: { type: string, enum: [acme, internal, none] }
+      responses:
+        "201": { description: "`{instance, admin_password, task}`" }
+  /servers/{id}/cms/{cmsId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: cmsId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [cms]
+      summary: One CMS instance (servers.read); live details come from the `cms.wp.info` task
+      responses:
+        "200": { description: Instance }
+    delete:
+      tags: [cms]
+      summary: Remove the instance (servers.operate + re-auth); `?delete_data=true` also deletes database and files
+      responses:
+        "202": { description: "The queued `cms.remove` task" }
   /servers/{id}/metrics:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:

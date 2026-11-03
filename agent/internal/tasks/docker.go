@@ -246,10 +246,12 @@ type inspected struct {
 	State        struct {
 		Status   string
 		ExitCode int
+		Health   *struct{ Status string }
 	}
 	Config struct {
 		Tty    bool
 		Labels map[string]string
+		Env    []string
 	}
 }
 

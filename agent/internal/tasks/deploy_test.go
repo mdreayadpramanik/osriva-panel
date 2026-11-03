@@ -3,6 +3,7 @@ package tasks
 import (
 	"archive/tar"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,11 @@ type fakeEngine struct {
 	n          int
 	buildFiles map[string]string // name -> content or "-> target" for links
 	buildFail  bool
-	crashImage string // containers of this image exit at once
+	crashImage string                       // containers of this image exit at once
+	networks   map[string]map[string]string // name -> labels
+	volumes    map[string]map[string]string
+	cliOut     func(script string) (string, int) // WP-CLI containers
+	cliScripts []string
 	stops      int
 }
 
@@ -56,7 +61,34 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := strings.TrimPrefix(r.URL.Path, "/v1.41")
 	parts := strings.Split(strings.Trim(p, "/"), "/")
 	notFound := func() { w.WriteHeader(404); _, _ = io.WriteString(w, `{"message":"no such object"}`) }
+	if f.networks == nil {
+		f.networks, f.volumes = map[string]map[string]string{}, map[string]map[string]string{}
+	}
 	switch {
+	case p == "/networks/create" || p == "/volumes/create":
+		var b struct {
+			Name   string
+			Labels map[string]string
+		}
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		m := map[bool]map[string]map[string]string{true: f.networks, false: f.volumes}[strings.HasPrefix(p, "/networks")]
+		m[b.Name] = b.Labels
+		w.WriteHeader(201)
+		_, _ = io.WriteString(w, `{}`)
+	case strings.HasPrefix(p, "/networks/") || strings.HasPrefix(p, "/volumes/"):
+		m := map[bool]map[string]map[string]string{true: f.networks, false: f.volumes}[strings.HasPrefix(p, "/networks")]
+		name := parts[1]
+		labels, ok := m[name]
+		if !ok {
+			notFound()
+			return
+		}
+		if r.Method == http.MethodDelete {
+			delete(m, name)
+			w.WriteHeader(204)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"Name": name, "Id": name, "Labels": labels})
 	case p == "/build":
 		f.buildFiles = map[string]string{}
 		tr := tar.NewReader(r.Body)
@@ -110,7 +142,7 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(204)
 		case parts[2] == "json":
 			_ = json.NewEncoder(w).Encode(map[string]any{"Id": c.ID, "Name": "/" + c.Name, "Image": c.Image,
-				"State": map[string]any{"Status": c.State, "ExitCode": map[bool]int{true: 1}[c.State == "exited"]}, "Config": map[string]any{"Labels": c.Labels}})
+				"State": map[string]any{"Status": c.State, "ExitCode": map[bool]int{true: 1}[c.State == "exited"], "Health": map[string]string{"Status": map[bool]string{true: "healthy", false: "starting"}[c.Image == agenttask.MariaDBImage]}}, "Config": map[string]any{"Labels": c.Labels, "Env": c.Body["Env"]}})
 		case parts[2] == "rename":
 			c.Name = r.URL.Query().Get("name")
 			w.WriteHeader(204)
@@ -124,8 +156,17 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				c.State = "exited"
 			}
 			w.WriteHeader(204)
+		case parts[2] == "wait":
+			_, code := f.cli(c)
+			_ = json.NewEncoder(w).Encode(map[string]int{"StatusCode": code})
 		case parts[2] == "logs":
-			w.WriteHeader(200) // empty multiplexed stream
+			if out, _ := f.cli(c); out != "" {
+				var h [8]byte
+				h[0] = 1
+				binary.BigEndian.PutUint32(h[4:], uint32(len(out)))
+				_, _ = w.Write(h[:])
+				_, _ = io.WriteString(w, out)
+			}
 		default:
 			notFound()
 		}
@@ -413,4 +454,13 @@ func TestContextPermissionsNormalised(t *testing.T) {
 	if modes["site/"] != 0o755 || modes["site/index.html"] != 0o644 {
 		t.Fatalf("modes: %v", modes)
 	}
+}
+
+// cli returns the scripted output and exit code of a WP-CLI container; f.mu is held.
+func (f *fakeEngine) cli(c *fakeCt) (string, int) {
+	if c.Image != agenttask.WPCLIImage || f.cliOut == nil {
+		return "", 0
+	}
+	script := c.Body["Cmd"].([]any)[2].(string)
+	return f.cliOut(script)
 }

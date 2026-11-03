@@ -44,6 +44,8 @@ func Class(typ string) string {
 		return ClassOperate
 	case typ == ProxyApply || typ == ProxyDisable:
 		return ClassOperate
+	case cmsTask(typ) && !cmsReadOnly(typ):
+		return ClassOperate
 	}
 	return ClassRead
 }
@@ -54,7 +56,7 @@ func NeedsReauth(typ string, params json.RawMessage) bool {
 		return dockerReauth(typ, params)
 	}
 	switch typ {
-	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable:
+	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable, CMSWPInstall, CMSWPUpdate, CMSRemove:
 		return true
 	case ServiceAction:
 		var p ServiceActionParams

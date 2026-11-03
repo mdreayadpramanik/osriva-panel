@@ -370,3 +370,33 @@ export async function waitTask<R>(serverId: string, task: Task<R>, rounds = 18):
   if (t.status === "queued" || t.status === "running") throw new ApiError(504, "task_pending", "The agent has not answered yet. Is it online?");
   throw new ApiError(502, `task_${t.status}`, t.error || `Task ${t.status}.`);
 }
+
+export type CMSInstance = {
+  id: string;
+  kind: "wordpress";
+  name: string;
+  title: string;
+  url: string;
+  host_port: number;
+  admin_user: string;
+  admin_email: string;
+  domain: string;
+  install_task_id: string | null;
+  install_status: TaskStatus;
+  install_error: string;
+  created_at: string;
+};
+export type WPComponent = { name: string; status: string; version: string; update_version?: string };
+export type WPInfo = {
+  name: string;
+  running: boolean;
+  state: string;
+  db_state: string;
+  installed: boolean;
+  core_version?: string;
+  core_update?: string;
+  site_url?: string;
+  plugins: WPComponent[];
+  themes: WPComponent[];
+};
+export type WPCommandResult = { name: string; ok: boolean; output: string };
