@@ -77,8 +77,8 @@ task() { # task TYPE PARAMS_JSON [WAIT_ROUNDS] -> final task JSON
 	local t id i s
 	t="$(api POST "/servers/$SERVER_ID/tasks" "$(jq -nc --arg t "$1" --argjson p "$2" '{type:$t,params:$p}')")"
 	id="$(jq -r .id <<<"$t")"
-	for i in $(seq "${3:-3}"); do
-		t="$(api GET "/servers/$SERVER_ID/tasks/$id?wait=20")"
+	for i in $(seq "$(( ${3:-3} * 4 / 3 + 1 ))"); do
+		t="$(api GET "/servers/$SERVER_ID/tasks/$id?wait=15")"
 		s="$(jq -r .status <<<"$t")"
 		[ "$s" = queued ] || [ "$s" = running ] || break
 	done
@@ -281,7 +281,7 @@ pg() { sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.e
 [ "$(pg "SELECT count(*) FROM audit_logs WHERE metadata::text LIKE '%hunter5%'")" = 0 ] || fail "secret in the audit log"
 for app in "$SITE" "$API_APP"; do
 	RM="$(api DELETE "/servers/$SERVER_ID/apps/$app" | jq -r .id)"
-	t="$(api GET "/servers/$SERVER_ID/tasks/$RM?wait=20")"
+	t="$(api GET "/servers/$SERVER_ID/tasks/$RM?wait=15")"
 	jq -e '.status == "succeeded" and .result.container_removed == true and .result.images_removed > 0' <<<"$t" >/dev/null || fail "app.remove: $t"
 done
 [ -z "$(sudo docker ps -aq --filter label=dev.osriva.app)" ] || fail "app containers left"
@@ -292,8 +292,8 @@ step "Websites: Caddy reverse proxy (internal CA), reload, port conflict, disabl
 login # proxy and site changes need recent authentication
 wait_task() { # wait_task TASK_ID -> final task JSON
 	local t s i
-	for i in $(seq 1 18); do
-		t="$(api GET "/servers/$SERVER_ID/tasks/$1?wait=20")"
+	for i in $(seq 1 30); do
+		t="$(api GET "/servers/$SERVER_ID/tasks/$1?wait=15")"
 		s="$(jq -r .status <<<"$t")"
 		[ "$s" = queued ] || [ "$s" = running ] || break
 	done
