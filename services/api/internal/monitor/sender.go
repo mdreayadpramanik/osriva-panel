@@ -58,7 +58,7 @@ var units = map[string]string{MetricCPU: "%", MetricMemory: "%", MetricDisk: "%"
 func Describe(ev *store.AlertEvent) string {
 	switch ev.State {
 	case "test":
-		return "[OSRIVA] Test notification: this channel works."
+		return "[OSRIVA] Test notification from OSRIVA Panel."
 	case "resolved":
 		return fmt.Sprintf("[OSRIVA] RESOLVED: %s on %s (%s %.1f%s)", ev.RuleName, ev.ServerName, ev.Metric, ev.Value, units[ev.Metric])
 	}

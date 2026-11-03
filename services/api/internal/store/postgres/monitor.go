@@ -88,6 +88,9 @@ func scanRule(row pgx.Row) (*store.AlertRule, error) {
 }
 
 func (s *Store) CreateAlertRule(ctx context.Context, r *store.AlertRule) error {
+	if r.ChannelIDs == nil {
+		r.ChannelIDs = []string{} // a nil slice would be sent as NULL
+	}
 	err := s.pool.QueryRow(ctx, `INSERT INTO alert_rules (id, organization_id, name, server_id, metric, threshold, duration_minutes,
 			channel_ids, enabled, created_by)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8::uuid[], $9, $10) RETURNING created_at`,
@@ -118,6 +121,9 @@ func (s *Store) ListAlertRules(ctx context.Context, orgID string) ([]store.Alert
 }
 
 func (s *Store) UpdateAlertRule(ctx context.Context, r *store.AlertRule) error {
+	if r.ChannelIDs == nil {
+		r.ChannelIDs = []string{}
+	}
 	err := s.pool.QueryRow(ctx, `UPDATE alert_rules SET name = $2, server_id = $3, metric = $4, threshold = $5, duration_minutes = $6,
 			channel_ids = $7::uuid[], enabled = $8
 		WHERE id = $1 RETURNING organization_id::text, created_by::text, created_at`,
