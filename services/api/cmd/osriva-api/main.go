@@ -286,6 +286,11 @@ func cmdServe() error {
 	case <-ctx.Done():
 		rt.log.Info("shutting down")
 	}
+	// First, before draining requests: agent long polls keep Shutdown busy for up to
+	// its timeout, and the container may be killed 10 s after SIGTERM.
+	releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 3*time.Second)
+	lessor.ReleaseAll(releaseCtx)
+	cancelRelease()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	for _, s := range servers {
@@ -293,7 +298,6 @@ func cmdServe() error {
 			runErr = err
 		}
 	}
-	lessor.ReleaseAll(shutdownCtx)
 	return runErr
 }
 

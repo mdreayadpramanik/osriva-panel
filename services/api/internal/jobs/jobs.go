@@ -233,6 +233,9 @@ func (l *Lessor) Holder() string { return l.holder }
 
 // Hold takes or renews the named lease; false means another process runs the loop.
 func (l *Lessor) Hold(ctx context.Context, name string, now time.Time, ttl time.Duration) bool {
+	if ctx.Err() != nil {
+		return false // shutting down: never take a lease back after ReleaseAll
+	}
 	ok, err := l.store.AcquireLease(ctx, name, l.holder, now, ttl)
 	if err != nil {
 		l.log.Warn("lease", "name", name, "err", err)
@@ -265,5 +268,7 @@ func (q *Queue) Status(ctx context.Context) (*Status, error) {
 func (l *Lessor) ReleaseAll(ctx context.Context) {
 	if err := l.store.ReleaseLeases(ctx, l.holder); err != nil {
 		l.log.Warn("release leases", "err", err)
+	} else {
+		l.log.Info("released loop leases", "holder", l.holder)
 	}
 }
