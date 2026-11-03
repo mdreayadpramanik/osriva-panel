@@ -473,7 +473,11 @@ sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /
 wait_for 60 "API back" curl -fsS -o /dev/null "$PANEL/api/v1/meta" || fail "API did not come back"
 login
 pruned() { [ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'ci.ancient'")" = 0 ] && [ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'audit.pruned'")" -ge 1 ]; }
-wait_for 60 "audit retention" pruned || fail "old audit entry not pruned"
+wait_for 60 "audit retention" pruned || {
+	pg "SELECT name, holder, expires_at, now() FROM leases"
+	sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml logs --tail 60 api | grep -iE "lease|shutting|retention|audit|warn|error" || true
+	fail "old audit entry not pruned"
+}
 has_rollup() { api GET "/servers/$SERVER_ID/metrics?minutes=10080" | jq -e '.resolution == "hour" and ([.samples[] | select(.cpu_percent == 42 and .samples == 6)] | length == 1)'; }
 wait_for 60 "hourly rollup" has_rollup || fail "rollup not written"
 wait_for 90 "server online again" is_online || fail "agent did not reconnect"
