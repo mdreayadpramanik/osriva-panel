@@ -98,6 +98,14 @@
 - [ ] Other CMSes (Joomla, Drupal, Ghost …); multisite
 - [ ] Backups before updates (Phase 7)
 
+## Phase 7a: Encrypted backups (done)
+
+- [x] age-encrypted volume and WordPress backups, verify, restore, delete (CI run 41603543535)
+- [x] Recovery key export; schedules with retention (CI run 41603543535)
+- [ ] Remote backup storage (S3-compatible, SFTP) and off-server copies (Phase 7b, needs credentials)
+- [ ] Database services: create MySQL/MariaDB/PostgreSQL databases and users, per-database dumps
+- [ ] App (Phase 4b) and plain container backups with stop-consistent snapshots
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters

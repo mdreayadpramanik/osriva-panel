@@ -123,6 +123,17 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
 | Joomla, Drupal, Ghost and other CMSes | UNSUPPORTED | Not implemented |
 
+## Backups (Phase 7a)
+
+"System tests run 41603543535" is the `System tests` workflow at commit `d6adfe1` (2026-11-03).
+
+| Platform / feature | Status | Evidence / notes |
+|--------------------|--------|------------------|
+| Ubuntu 24.04 + Docker (local volumes): volume and WordPress backups, verify, restore, schedules | SUPPORTED | System tests run 41603543535 |
+| Rootless Docker, non-local volume drivers | UNSUPPORTED | The agent reads volumes from their local mount point and refuses other drivers |
+| Remote storage (S3, SFTP) | UNSUPPORTED | Phase 7b |
+| Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).

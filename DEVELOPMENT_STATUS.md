@@ -1,10 +1,37 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **6a (WordPress) done** · Next: **Phase 6b (staging, clone, migrate) or Phase 7 (databases, backups)**
+Last updated: **2026-11-03** · Current phase: **7a (encrypted backups) done** · Next: **Phase 7b (remote backup storage, database services) or Phase 8 (alerts, notifications)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, and install and maintain WordPress.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, and take encrypted, verified backups with tested restores.
+
+## Phase 7a report (encrypted backups and restores)
+
+Design: [ADR-0010](docs/adr/0010-backups.md). Evidence: `System tests` run 41603543535 (commit `d6adfe1`,
+2026-11-03, both jobs passed) on Ubuntu 24.04. Run 41602378762 passed every volume check and restored the WordPress
+database; its file check used HTTP, where WordPress redirects a missing URL, so the check now looks inside the container.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| age (X25519) encrypted `tar.gz`; agent holds only the recipient; identity encrypted in the panel, redacted from task records, exportable as recovery key (re-auth, audited) | unit + e2e tests (recovery key decrypts data for the recipient); Ubuntu CI: file 0600 and not readable as plain text, no key in `agent_tasks` or `audit_logs` |
+| Volume backups preserving owners, modes and symlinks | Ubuntu CI: uid 1234, mode 640 and a symlink restored, newer files removed |
+| WordPress backups: consistent `mariadb-dump` + files volume | Ubuntu CI: title changed in the database and a file added after the backup, both undone by the restore |
+| Verify: file checksum, full decryption and read; damage reported | unit tests (wrong key, flipped byte); Ubuntu CI: corrupted archive detected |
+| Restore verifies first, refuses damaged archives without touching data, stops and restarts affected containers | unit tests; Ubuntu CI: live data unchanged after a refused restore, WordPress back online |
+| Extraction refuses traversal, absolute paths and writes through symlinks | unit tests |
+| Control-plane volumes refused (installer backup covers them) | unit test |
+| Schedules (every N hours, keep newest K) run by the panel janitor as audited system tasks; pruning | e2e test; Ubuntu CI: scheduled backup ran within a minute |
+| Dashboard Backups tab (back up now, schedules, verify, restore with typed confirmation, delete, recovery key) | `tsc`; browser with a real agent on Windows 11 (tab and recovery key) |
+
+### Limitations
+
+* **Backups are stored on the same server.** They do not survive the loss of the server. Remote storage (S3-compatible, SFTP) needs owner credentials: Phase 7b.
+* Volume backups of running databases are not crash-consistent (the dashboard says so); WordPress backups are.
+* Database engines as a service (creating MySQL/PostgreSQL databases and users) are not implemented yet.
+* Backups and restores need Docker on Linux; Windows and BSD agents are unsupported.
 
 ## Phase 6a report (WordPress)
 
@@ -279,5 +306,7 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 5a | Reverse proxy (Caddy), websites, automatic HTTPS, certificate status, DNS hint | ✅ Done (Let's Encrypt NOT_TESTED) |
 | 5b | DNS provider adapters | Pending (needs provider credentials) |
 | 6a | WordPress install, info, checksum verification, updates, remove | ✅ Done |
-| 6b | Staging, clone, migrate, other CMSes | ⏭ Next |
-| 7–14 | See [TASKS.md](TASKS.md) | Not started |
+| 6b | Staging, clone, migrate, other CMSes | Pending |
+| 7a | Encrypted, verified backups and restores (volumes, WordPress), schedules | ✅ Done |
+| 7b | Remote backup storage, database services | ⏭ Next (remote storage needs credentials) |
+| 8–14 | See [TASKS.md](TASKS.md) | Not started |
