@@ -340,7 +340,8 @@ WP_PASS="$(jq -r .admin_password <<<"$WP")"
 [ "${#WP_PASS}" -ge 16 ] || fail "no admin password returned"
 INSTALL="$(wait_task "$(jq -r .task.id <<<"$WP")")"
 jq -e '.status == "succeeded" and .result.ok == true' <<<"$INSTALL" >/dev/null || fail "WordPress install: $INSTALL"
-curl -fsS http://127.0.0.1:18095/ | grep -q "OSRIVA CI blog" || fail "front page"
+FRONT="$(curl -fsS http://127.0.0.1:18095/)" || fail "front page not served"
+grep -q "OSRIVA CI blog" <<<"$FRONT" || fail "front page"
 LOGIN="$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' -b 'wordpress_test_cookie=WP%20Cookie%20check' \
 	--data-urlencode 'log=ciadmin' --data-urlencode "pwd=$WP_PASS" -d 'testcookie=1' http://127.0.0.1:18095/wp-login.php)"
 case "$LOGIN" in 302*wp-admin*) ;; *) fail "admin login with the generated password: $LOGIN" ;; esac
