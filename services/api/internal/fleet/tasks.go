@@ -318,6 +318,16 @@ func (s *Service) RunJanitor(ctx context.Context, every time.Duration) {
 	defer t.Stop()
 	for {
 		now := s.id.Now()
+		// With several API instances only the lease holder runs the janitor, so
+		// scheduled backups are queued once.
+		if s.lessor != nil && !s.lessor.Hold(ctx, "janitor", now, 3*every) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			continue
+		}
 		if n, err := s.store.ExpireTasks(ctx, now); err != nil {
 			s.log.Warn("expire tasks", "err", err)
 		} else if n > 0 {

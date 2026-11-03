@@ -21,6 +21,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
@@ -44,6 +45,8 @@ type Service struct {
 	keys   *secrets.Keyring
 	log    *slog.Logger
 	sender Sender
+	queue  *jobs.Queue
+	lessor *jobs.Lessor
 }
 
 func New(st store.Store, id *identity.Service, keys *secrets.Keyring, log *slog.Logger, sender Sender) *Service {
@@ -254,6 +257,7 @@ func (s *Service) TestChannel(ctx context.Context, actor *identity.Principal, id
 type RuleInput struct {
 	Name            string   `json:"name"`
 	ServerID        *string  `json:"server_id"`
+	GroupID         *string  `json:"group_id"`
 	Metric          string   `json:"metric"`
 	Threshold       float64  `json:"threshold"`
 	DurationMinutes int      `json:"duration_minutes"`
@@ -291,10 +295,19 @@ func (s *Service) checkRule(ctx context.Context, actor *identity.Principal, r *s
 	if r.DurationMinutes < 1 || r.DurationMinutes > 1440 {
 		return verr("duration_minutes", "must be 1-1440")
 	}
+	if r.ServerID != nil && r.GroupID != nil {
+		return verr("group_id", "choose a server or a group, not both")
+	}
 	if r.ServerID != nil {
 		x, err := s.store.GetServer(ctx, *r.ServerID)
 		if err != nil || x.OrganizationID != actor.User.OrganizationID {
 			return verr("server_id", "unknown server")
+		}
+	}
+	if r.GroupID != nil {
+		g, err := s.store.GetServerGroup(ctx, *r.GroupID)
+		if err != nil || g.OrganizationID != actor.User.OrganizationID {
+			return verr("group_id", "unknown server group")
 		}
 	}
 	if r.ChannelIDs == nil {
@@ -322,7 +335,7 @@ func (s *Service) CreateRule(ctx context.Context, actor *identity.Principal, in 
 	if err := s.id.Require(ctx, actor, rbac.AlertsWrite); err != nil {
 		return nil, err
 	}
-	r := &store.AlertRule{ID: auth.NewID(), OrganizationID: actor.User.OrganizationID, Name: in.Name, ServerID: in.ServerID, Metric: in.Metric,
+	r := &store.AlertRule{ID: auth.NewID(), OrganizationID: actor.User.OrganizationID, Name: in.Name, ServerID: in.ServerID, GroupID: in.GroupID, Metric: in.Metric,
 		Threshold: in.Threshold, DurationMinutes: in.DurationMinutes, ChannelIDs: in.ChannelIDs, Enabled: in.Enabled, CreatedBy: &actor.User.ID}
 	if err := s.checkRule(ctx, actor, r); err != nil {
 		return nil, err
@@ -354,8 +367,8 @@ func (s *Service) UpdateRule(ctx context.Context, actor *identity.Principal, id 
 	if err != nil {
 		return nil, err
 	}
-	r.Name, r.ServerID, r.Metric, r.Threshold, r.DurationMinutes, r.ChannelIDs, r.Enabled =
-		in.Name, in.ServerID, in.Metric, in.Threshold, in.DurationMinutes, in.ChannelIDs, in.Enabled
+	r.Name, r.ServerID, r.GroupID, r.Metric, r.Threshold, r.DurationMinutes, r.ChannelIDs, r.Enabled =
+		in.Name, in.ServerID, in.GroupID, in.Metric, in.Threshold, in.DurationMinutes, in.ChannelIDs, in.Enabled
 	if err := s.checkRule(ctx, actor, r); err != nil {
 		return nil, err
 	}
@@ -418,6 +431,13 @@ func (s *Service) Evaluate(ctx context.Context, now time.Time) {
 				servers[r.OrganizationID] = list
 			}
 			targets = list
+			if r.GroupID != nil {
+				g, err := s.store.GetServerGroup(ctx, *r.GroupID)
+				if err != nil {
+					continue
+				}
+				targets = slices.DeleteFunc(slices.Clone(list), func(x store.Server) bool { return !slices.Contains(g.ServerIDs, x.ID) })
+			}
 		}
 		for j := range targets {
 			x := &targets[j]
@@ -539,19 +559,108 @@ func (s *Service) transition(ctx context.Context, r *store.AlertRule, x *store.S
 	}
 	ev := &store.AlertEvent{ID: auth.NewID(), OrganizationID: r.OrganizationID, RuleID: &r.ID, RuleName: r.Name, ServerID: &x.ID,
 		ServerName: x.Name, Metric: r.Metric, State: state, Value: math.Round(value*10) / 10, Threshold: r.Threshold}
-	if err := s.store.InsertAlertEvent(ctx, ev); err != nil {
-		s.log.Warn("alert event", "err", err)
-		return
-	}
-	s.id.Audit(ctx, nil, "alerts."+state, "alert_rule", r.ID, store.OutcomeSuccess,
-		map[string]any{"rule": r.Name, "server": x.Name, "metric": r.Metric, "value": ev.Value, "threshold": r.Threshold})
 	var channels []store.NotificationChannel
 	for _, id := range r.ChannelIDs {
 		if c, err := s.store.GetChannel(ctx, id); err == nil && c.Enabled {
 			channels = append(channels, *c)
 		}
 	}
-	s.deliver(ctx, ev, channels, false)
+	if s.queue != nil {
+		ev.Pending = len(channels)
+	}
+	if err := s.store.InsertAlertEvent(ctx, ev); err != nil {
+		s.log.Warn("alert event", "err", err)
+		return
+	}
+	s.id.Audit(ctx, nil, "alerts."+state, "alert_rule", r.ID, store.OutcomeSuccess,
+		map[string]any{"rule": r.Name, "server": x.Name, "metric": r.Metric, "value": ev.Value, "threshold": r.Threshold})
+	if s.queue == nil {
+		s.deliver(ctx, ev, channels, false)
+		return
+	}
+	for i := range channels {
+		c := &channels[i]
+		if _, err := s.queue.Enqueue(ctx, notifyJob, notifyPayload{EventID: ev.ID, ChannelID: c.ID}, 0); err != nil {
+			_ = s.store.RecordAlertDelivery(ctx, ev.ID, false, c.Name+": could not be queued: "+err.Error())
+		}
+	}
+}
+
+// ---- queued delivery ----
+
+const notifyJob = "notification.deliver"
+
+type notifyPayload struct {
+	EventID   string `json:"event_id"`
+	ChannelID string `json:"channel_id"`
+}
+
+// UseQueue delivers alert notifications through the durable job queue, with
+// retries. Test notifications stay synchronous.
+func (s *Service) UseQueue(q *jobs.Queue) {
+	s.queue = q
+	q.Register(notifyJob, notifyHandler{s})
+}
+
+// UseLessor makes Run evaluate only in the API process holding the "monitor" lease.
+func (s *Service) UseLessor(l *jobs.Lessor) { s.lessor = l }
+
+type notifyHandler struct{ s *Service }
+
+func (h notifyHandler) Run(ctx context.Context, j jobs.Job) error {
+	s := h.s
+	var p notifyPayload
+	if err := json.Unmarshal(j.Payload, &p); err != nil {
+		return jobs.Permanent(fmt.Errorf("invalid payload: %w", err))
+	}
+	ev, err := s.store.GetAlertEvent(ctx, p.EventID)
+	if errors.Is(err, store.ErrNotFound) {
+		return jobs.Permanent(errors.New("the alert event no longer exists"))
+	}
+	if err != nil {
+		return err
+	}
+	c, err := s.store.GetChannel(ctx, p.ChannelID)
+	if errors.Is(err, store.ErrNotFound) {
+		return jobs.Permanent(errors.New("the channel was deleted"))
+	}
+	if err != nil {
+		return err
+	}
+	if !c.Enabled {
+		return jobs.Permanent(fmt.Errorf("%s: the channel was disabled", c.Name))
+	}
+	secret := ""
+	if len(c.SecretEnc) > 0 {
+		plain, err := s.keys.Decrypt(c.SecretEnc, channelAAD(c.ID))
+		if err != nil {
+			return jobs.Permanent(fmt.Errorf("%s: cannot decrypt the channel secret", c.Name))
+		}
+		secret = string(plain)
+	}
+	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	if err := s.sender.Send(sctx, c, secret, ev); err != nil {
+		return fmt.Errorf("%s: %w", c.Name, err)
+	}
+	if err := s.store.RecordAlertDelivery(ctx, ev.ID, true, ""); err != nil {
+		s.log.Warn("record delivery", "event", ev.ID, "err", err)
+	}
+	return nil
+}
+
+func (h notifyHandler) GiveUp(ctx context.Context, j jobs.Job, err error) {
+	var p notifyPayload
+	if json.Unmarshal(j.Payload, &p) != nil {
+		return
+	}
+	msg := err.Error()
+	if !jobs.IsPermanent(err) {
+		msg = fmt.Sprintf("%s (gave up after %d attempts)", msg, j.Attempt)
+	}
+	if err := h.s.store.RecordAlertDelivery(ctx, p.EventID, false, msg); err != nil && !errors.Is(err, store.ErrNotFound) {
+		h.s.log.Warn("record delivery", "event", p.EventID, "err", err)
+	}
 }
 
 // deliver sends ev to every channel and records the outcome on the event.

@@ -36,6 +36,7 @@ func TestLoadErrors(t *testing.T) {
 		"idle exceeds ttl":     {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_SESSION_TTL": "1h", "OSRIVA_SESSION_IDLE_TIMEOUT": "2h"},
 		"bad proxy":            {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_TRUSTED_PROXIES": "not-an-ip"},
 		"bad env":              {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_ENV": "staging"},
+		"bad redis url":        {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_REDIS_URL": "http://cache:6379"},
 	}
 	for name, m := range cases {
 		if _, err := Load(env(m)); err == nil {
@@ -93,5 +94,17 @@ func TestAgentEndpointConfig(t *testing.T) {
 	if _, err := Load(env(map[string]string{"OSRIVA_ENV": "development", "OSRIVA_DEV_MEMORY_STORE": "true", "OSRIVA_SECRET_KEY": validKey,
 		"OSRIVA_PUBLIC_URL": "http://127.0.0.1:8080"})); err != nil {
 		t.Fatalf("http panel URL in development: %v", err)
+	}
+}
+
+func TestRedisURL(t *testing.T) {
+	for _, u := range []string{"redis://cache:6379/0", "rediss://:secret@cache.example.com:6380"} {
+		c, err := Load(env(map[string]string{"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_REDIS_URL": u}))
+		if err != nil || c.RedisURL != u {
+			t.Fatalf("%s: %+v %v", u, c, err)
+		}
+	}
+	if c, _ := Load(env(map[string]string{"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey})); c.RedisURL != "" {
+		t.Fatal("Redis is optional")
 	}
 }

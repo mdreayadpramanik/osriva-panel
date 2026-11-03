@@ -34,6 +34,7 @@ tags:
   - name: settings
   - name: servers
   - name: agent
+  - name: fleet
 
 components:
   securitySchemes:
@@ -959,7 +960,7 @@ paths:
         "200": { description: "`{rules: [...]}`" }
     post:
       tags: [alerts]
-      summary: Add a rule (alerts.write); metric cpu|memory|disk|load|offline|backup
+      summary: Add a rule (alerts.write); metric cpu|memory|disk|load|offline|backup; target server_id, group_id or neither (every server)
       responses:
         "201": { description: Rule }
   /alerts/rules/{ruleId}:
@@ -977,7 +978,7 @@ paths:
   /alerts/events:
     get:
       tags: [alerts]
-      summary: Recent alert events with their delivery result (alerts.read)
+      summary: Recent alert events with their delivery result (alerts.read); `pending` counts notifications still queued for retry
       responses:
         "200": { description: "`{events: [...]}`" }
   /settings/audit-retention:
@@ -990,8 +991,113 @@ paths:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
       tags: [servers]
-      summary: Metric samples (servers.read); up to 1440 minutes raw, longer windows (up to 90 days) as hourly rollups with `resolution: hour`
+      summary: "Metric samples (servers.read); up to 1440 minutes raw, longer windows (up to 90 days) as hourly rollups with `resolution: hour`"
       parameters:
         - { name: minutes, in: query, schema: { type: integer, maximum: 1440, default: 60 } }
       responses:
         "200": { description: "`{samples: [{ts, cpu_percent?, mem_used_bytes?, mem_total_bytes?, load1?, net_rx_bps?, net_tx_bps?, disks?}]}`" }
+  /server-groups:
+    get:
+      tags: [fleet]
+      summary: Server groups with their member ids (servers.read)
+      responses:
+        "200": { description: "`{groups: [{id, name, description, server_ids, created_at}]}`" }
+    post:
+      tags: [fleet]
+      summary: Create a group (servers.write); name unique per organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+                description: { type: string, maxLength: 500 }
+      responses:
+        "201": { description: Group }
+        "422": { description: Invalid or duplicate name }
+  /server-groups/{groupId}:
+    parameters: [{ name: groupId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [fleet]
+      summary: One group (servers.read)
+      responses:
+        "200": { description: Group }
+    put:
+      tags: [fleet]
+      summary: Rename or describe a group (servers.write)
+      responses:
+        "200": { description: Group }
+    delete:
+      tags: [fleet]
+      summary: Delete a group (servers.write); refused while an alert rule targets it
+      responses:
+        "204": { description: Deleted }
+        "409": { description: Used by an alert rule }
+  /server-groups/{groupId}/members:
+    parameters: [{ name: groupId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [fleet]
+      summary: Replace the members (servers.write), at most 1000 servers of the organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                server_ids: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "200": { description: Group }
+  /fleet/task-types:
+    get:
+      tags: [fleet]
+      summary: Task types allowed in fleet batches and the batch size limit (servers.read)
+      responses:
+        "200": { description: "`{types: [...], max_servers: 200}`" }
+  /fleet/batches:
+    get:
+      tags: [fleet]
+      summary: Recent fleet batches with per-status counts (servers.read)
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, maximum: 100, default: 25 } }
+      responses:
+        "200": { description: "`{batches: [...]}`" }
+    post:
+      tags: [fleet]
+      summary: >-
+        Queue one task on every online server of a group or list (at most 200). The task
+        type must be in /fleet/task-types; permissions and re-authentication are those of
+        the single-server task. Offline, pending and revoked servers are skipped with a reason.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type: { type: string }
+                params: { type: object }
+                group_id: { type: string, format: uuid }
+                server_ids: { type: array, items: { type: string, format: uuid } }
+      responses:
+        "202": { description: "Batch: `{id, type, params, group_id, target, counts, tasks: [{task_id, server_id, server_name, status, error}], skipped: [{server_id, name, reason}]}`" }
+        "409": { description: No target server is online, or the group is empty }
+        "422": { description: Type not allowed in batches, invalid parameters or targets }
+  /fleet/batches/{batchId}:
+    parameters: [{ name: batchId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [fleet]
+      summary: A batch with each task's status; results are read per task from /servers/{id}/tasks/{taskId} (servers.read)
+      responses:
+        "200": { description: Batch }
+  /jobs:
+    get:
+      tags: [system]
+      summary: Background job queue counts and the newest failures (settings.read)
+      responses:
+        "200": { description: "`{counts: {queued, running, succeeded, failed}, recent_failures: [...]}`" }
+        "503": { description: The job queue is not running }

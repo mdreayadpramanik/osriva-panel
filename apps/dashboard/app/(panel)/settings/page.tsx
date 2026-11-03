@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, errorMessage } from "@/lib/api";
+import { api, errorMessage, type JobQueueStatus } from "@/lib/api";
+import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
-import { Alert, Button, Card, LoadingBlock, PageHeader, cx } from "@/components/ui";
+import { Alert, Badge, Button, Card, LoadingBlock, PageHeader, Table, Td, Th, cx } from "@/components/ui";
 
 type Mode = "personal" | "provider";
 
@@ -105,6 +106,9 @@ export default function SettingsPage() {
       <div className="mt-6">
         <AuditRetentionCard />
       </div>
+      <div className="mt-6">
+        <JobQueueCard />
+      </div>
     </>
   );
 }
@@ -158,6 +162,65 @@ function AuditRetentionCard() {
             </Button>
           )}
           <span className="text-xs text-muted">30 to 3650 days. Metrics: raw samples 24 h, hourly averages 90 days.</span>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const jobKinds: Record<string, string> = { "notification.deliver": "Alert notification" };
+
+function JobQueueCard() {
+  const [st, setSt] = useState<JobQueueStatus | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () =>
+      api<JobQueueStatus>("/jobs")
+        .then((s) => {
+          setSt(s);
+          setError(null);
+        })
+        .catch((e) => setError(errorMessage(e)));
+    void load();
+    const t = setInterval(load, 15_000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <Card
+      title="Background jobs"
+      description="Durable jobs (alert notifications) are retried with back-off: 30 s, 1, 2, 4 and 8 minutes, then marked failed. Finished jobs are kept 7 days."
+    >
+      {error && <Alert>{error}</Alert>}
+      {!st ? (
+        !error && <LoadingBlock />
+      ) : (
+        <div className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-wrap gap-2">
+            <Badge>{st.counts.queued} queued</Badge>
+            <Badge tone="accent">{st.counts.running} running</Badge>
+            <Badge tone="success">{st.counts.succeeded} succeeded</Badge>
+            <Badge tone={st.counts.failed > 0 ? "danger" : "neutral"}>{st.counts.failed} failed</Badge>
+          </div>
+          {st.recent_failures.length > 0 && (
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Failed</Th>
+                  <Th>Job</Th>
+                  <Th>Last error</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {st.recent_failures.map((j) => (
+                  <tr key={j.id}>
+                    <Td className="whitespace-nowrap text-xs text-muted">{formatDate(j.updated_at)}</Td>
+                    <Td className="text-xs">{jobKinds[j.kind] ?? j.kind} · {j.attempts}/{j.max_attempts} attempts</Td>
+                    <Td className="text-xs text-danger">{j.last_error}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
         </div>
       )}
     </Card>

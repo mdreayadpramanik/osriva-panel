@@ -21,6 +21,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/pkg/inventory"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/pki"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
@@ -50,6 +51,8 @@ type Options struct {
 	PanelURL string
 	// AgentURL is the public https:// URL of the mTLS agent listener (OSRIVA_AGENT_PUBLIC_URL).
 	AgentURL string
+	// EnrollLimiter limits enrolment attempts per IP; a default is used when nil.
+	EnrollLimiter ratelimit.Limiter
 }
 
 type Service struct {
@@ -59,8 +62,9 @@ type Service struct {
 	ca       *pki.CA
 	panelURL string
 	agentURL string
-	limiter  *ratelimit.KeyedLimiter
+	limiter  ratelimit.Limiter
 	keys     *secrets.Keyring
+	lessor   *jobs.Lessor
 
 	notify notifier
 
@@ -71,7 +75,10 @@ type Service struct {
 // New loads the internal CA, creating it on first start.
 func New(ctx context.Context, o Options) (*Service, error) {
 	s := &Service{store: o.Store, id: o.Identity, log: o.Log, panelURL: strings.TrimRight(o.PanelURL, "/"),
-		agentURL: strings.TrimRight(o.AgentURL, "/"), limiter: ratelimit.NewKeyed(0.2, 10), keys: o.Keys}
+		agentURL: strings.TrimRight(o.AgentURL, "/"), limiter: o.EnrollLimiter, keys: o.Keys}
+	if s.limiter == nil {
+		s.limiter = ratelimit.NewKeyed(0.2, 10)
+	}
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -470,3 +477,6 @@ func (s *Service) Renew(ctx context.Context, x *store.Server, req agentproto.Ren
 	s.id.Audit(ctx, nil, "agent.renew", "server", x.ID, store.OutcomeSuccess, map[string]any{"cert_serial": rec.Serial})
 	return &agentproto.RenewResponse{CertificatePEM: string(certPEM)}, nil
 }
+
+// UseLessor makes RunJanitor run only in the API process holding the "janitor" lease.
+func (s *Service) UseLessor(l *jobs.Lessor) { s.lessor = l }

@@ -122,6 +122,8 @@ type Store interface {
 	CMSStore
 	BackupStore
 	MonitorStore
+	FleetStore
+	JobStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -256,6 +258,8 @@ type Task struct {
 	ExpiresAt   time.Time
 	// RunTimeout bounds how long the task may run once claimed (default 5 minutes).
 	RunTimeout time.Duration
+	// BatchID links the task to a fleet batch (nil for single-server tasks).
+	BatchID    *string
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 	Result     json.RawMessage
@@ -470,7 +474,8 @@ type AlertRule struct {
 	ID              string
 	OrganizationID  string
 	Name            string
-	ServerID        *string // nil: every active server of the organization
+	ServerID        *string // nil (and GroupID nil): every active server of the organization
+	GroupID         *string // the rule applies to the group's members
 	Metric          string
 	Threshold       float64
 	DurationMinutes int
@@ -503,7 +508,9 @@ type AlertEvent struct {
 	Delivered      int
 	Failed         int
 	DeliveryError  string
-	CreatedAt      time.Time
+	// Pending counts notifications still queued for delivery.
+	Pending   int
+	CreatedAt time.Time
 }
 
 type MetricRollup struct {
@@ -531,7 +538,11 @@ type MonitorStore interface {
 	PutAlertState(ctx context.Context, s *AlertState) error
 
 	InsertAlertEvent(ctx context.Context, e *AlertEvent) error
+	GetAlertEvent(ctx context.Context, id string) (*AlertEvent, error)
 	SetAlertEventDelivery(ctx context.Context, id string, delivered, failed int, errMsg string) error
+	// RecordAlertDelivery moves one pending notification to delivered (ok) or failed,
+	// appending errMsg to the delivery error (bounded to 1000 bytes).
+	RecordAlertDelivery(ctx context.Context, id string, ok bool, errMsg string) error
 	ListAlertEvents(ctx context.Context, orgID string, limit int) ([]AlertEvent, error)
 
 	UpsertRollup(ctx context.Context, r *MetricRollup) error
@@ -539,4 +550,106 @@ type MonitorStore interface {
 	PruneRollups(ctx context.Context, before time.Time) (int, error)
 	// PruneAudit deletes audit entries older than before (retention).
 	PruneAudit(ctx context.Context, before time.Time) (int, error)
+}
+
+// AppendDeliveryError joins delivery errors with "; ", bounded to 1000 bytes.
+func AppendDeliveryError(prev, msg string) string {
+	if msg == "" {
+		return prev
+	}
+	if prev != "" {
+		msg = prev + "; " + msg
+	}
+	if len(msg) > 1000 {
+		msg = msg[:1000]
+	}
+	return msg
+}
+
+// ---- Fleet: server groups and task batches (Phase 9) ----
+
+type ServerGroup struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	Description    string
+	ServerIDs      []string // sorted
+	CreatedBy      *string
+	CreatedAt      time.Time
+}
+
+type TaskBatch struct {
+	ID             string
+	OrganizationID string
+	Type           string
+	Params         json.RawMessage // redacted
+	GroupID        *string
+	Target         string
+	Skipped        json.RawMessage // [{server_id, name, reason}]
+	RequestedBy    *string
+	CreatedAt      time.Time
+}
+
+// FleetStore persists server groups and fleet task batches. Group names are
+// unique per organization (ErrConflict).
+type FleetStore interface {
+	CreateServerGroup(ctx context.Context, g *ServerGroup) error
+	GetServerGroup(ctx context.Context, id string) (*ServerGroup, error)
+	ListServerGroups(ctx context.Context, orgID string) ([]ServerGroup, error)
+	// UpdateServerGroup changes the name and description.
+	UpdateServerGroup(ctx context.Context, g *ServerGroup) error
+	// DeleteServerGroup returns ErrConflict while an alert rule targets the group.
+	DeleteServerGroup(ctx context.Context, id string) error
+	// SetServerGroupMembers replaces the members (ErrNotFound for an unknown server).
+	SetServerGroupMembers(ctx context.Context, groupID string, serverIDs []string) error
+
+	// CreateTaskBatch stores the batch and its tasks in one transaction.
+	CreateTaskBatch(ctx context.Context, b *TaskBatch, tasks []*Task) error
+	GetTaskBatch(ctx context.Context, id string) (*TaskBatch, error)
+	ListTaskBatches(ctx context.Context, orgID string, limit int) ([]TaskBatch, error)
+	ListBatchTasks(ctx context.Context, batchID string) ([]Task, error)
+}
+
+// ---- Background jobs and leases (Phase 9) ----
+
+type JobStatus string
+
+const (
+	JobQueued    JobStatus = "queued"
+	JobRunning   JobStatus = "running"
+	JobSucceeded JobStatus = "succeeded"
+	JobFailed    JobStatus = "failed"
+)
+
+type Job struct {
+	ID          string
+	Kind        string
+	Payload     json.RawMessage
+	Status      JobStatus
+	Attempts    int
+	MaxAttempts int
+	RunAt       time.Time
+	LockedUntil *time.Time
+	LastError   string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+type JobStore interface {
+	EnqueueJob(ctx context.Context, j *Job) error
+	// ClaimJobs moves up to limit due jobs (queued with run_at <= now, or running
+	// with an expired lease) to running, increments their attempts and leases them.
+	ClaimJobs(ctx context.Context, now time.Time, lease time.Duration, limit int) ([]Job, error)
+	// FinishJob ends a running job: succeeded, failed, or queued again at retryAt.
+	FinishJob(ctx context.Context, id string, status JobStatus, retryAt time.Time, errMsg string, now time.Time) error
+	GetJob(ctx context.Context, id string) (*Job, error)
+	// ListJobs lists the newest jobs, optionally of one status.
+	ListJobs(ctx context.Context, status JobStatus, limit int) ([]Job, error)
+	CountJobs(ctx context.Context) (map[JobStatus]int, error)
+	// PruneJobs deletes succeeded and failed jobs last updated before before.
+	PruneJobs(ctx context.Context, before time.Time) (int, error)
+
+	// AcquireLease takes or renews the named lease for holder until now+ttl.
+	// It reports false while another holder's lease is unexpired.
+	AcquireLease(ctx context.Context, name, holder string, now time.Time, ttl time.Duration) (bool, error)
 }

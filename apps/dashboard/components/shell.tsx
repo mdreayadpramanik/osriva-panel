@@ -13,6 +13,7 @@ type NavItem = { href: string; label: string; permission?: string };
 const nav: NavItem[] = [
   { href: "/", label: "Overview" },
   { href: "/servers", label: "Servers", permission: "servers.read" },
+  { href: "/fleet", label: "Fleet", permission: "servers.read" },
   { href: "/users", label: "Users & Permissions", permission: "users.read" },
   { href: "/alerts", label: "Alerts", permission: "alerts.read" },
   { href: "/audit", label: "Audit Log", permission: "audit.read" },

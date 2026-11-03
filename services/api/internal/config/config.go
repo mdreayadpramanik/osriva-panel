@@ -41,6 +41,9 @@ type Config struct {
 	AgentAddr      string // listen address of the mutual-TLS agent listener, e.g. :8443
 	AgentPublicURL string // https URL agents use to reach AgentAddr, e.g. https://panel.example.com:8443
 	AgentDistDir   string // directory with osriva-agent-<os>-<arch>[.exe] builds served to servers
+
+	// RedisURL (optional) shares rate limits and login lockouts between API instances.
+	RedisURL string
 }
 
 // AgentEnabled reports whether agent enrolment is configured.
@@ -134,6 +137,10 @@ func Load(getenv func(string) string) (*Config, error) {
 	c.AgentAddr = get("OSRIVA_AGENT_ADDR", "")
 	c.AgentPublicURL = strings.TrimRight(get("OSRIVA_AGENT_PUBLIC_URL", ""), "/")
 	c.AgentDistDir = get("OSRIVA_AGENT_DIST_DIR", "")
+	c.RedisURL = get("OSRIVA_REDIS_URL", "")
+	if u, err := url.Parse(c.RedisURL); c.RedisURL != "" && (err != nil || (u.Scheme != "redis" && u.Scheme != "rediss") || u.Host == "") {
+		errs = append(errs, errors.New("OSRIVA_REDIS_URL: must be a redis:// or rediss:// URL"))
+	}
 	if c.AgentAddr != "" || c.AgentPublicURL != "" {
 		if c.AgentAddr == "" || c.AgentPublicURL == "" || c.PublicURL == "" {
 			errs = append(errs, errors.New("OSRIVA_AGENT_ADDR, OSRIVA_AGENT_PUBLIC_URL and OSRIVA_PUBLIC_URL must be set together"))

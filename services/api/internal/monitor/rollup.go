@@ -173,6 +173,16 @@ func (s *Service) Run(ctx context.Context, every time.Duration) {
 	var lastRollup, lastRetention time.Time
 	for {
 		now := s.id.Now()
+		// With several API instances only the lease holder evaluates, so each
+		// transition (and notification) happens once.
+		if s.lessor != nil && !s.lessor.Hold(ctx, "monitor", now, 3*every) {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			continue
+		}
 		s.Evaluate(ctx, now)
 		if now.Sub(lastRollup) >= 5*time.Minute {
 			s.RunRollups(ctx, now)

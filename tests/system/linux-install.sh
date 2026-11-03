@@ -479,6 +479,43 @@ wait_for 60 "hourly rollup" has_rollup || fail "rollup not written"
 wait_for 90 "server online again" is_online || fail "agent did not reconnect"
 sudo docker rm -f ci-mail >/dev/null
 
+step "Fleet: server groups, a batch across the group, queued notification retries, leases"
+login
+PENDING_ID="$(api POST /servers '{"name":"ci-pending"}' | jq -r .server.id)"
+GROUP_ID="$(api POST /server-groups '{"name":"ci fleet","description":"system test"}' | jq -r .id)"
+api PUT "/server-groups/$GROUP_ID/members" "$(jq -nc --arg a "$SERVER_ID" --arg b "$PENDING_ID" '{server_ids:[$a,$b]}')" | jq -e '.server_ids | length == 2' >/dev/null || fail "group members"
+! api POST /fleet/batches "$(jq -nc --arg g "$GROUP_ID" '{type:"files.read",params:{path:"/etc/hostname"},group_id:$g}')" >/dev/null 2>&1 || fail 'file tasks must not run as a batch'
+BATCH="$(api POST /fleet/batches "$(jq -nc --arg g "$GROUP_ID" '{type:"system.time",params:{},group_id:$g}')")"
+jq -e '(.tasks | length) == 1 and (.skipped | length) == 1 and .skipped[0].reason == "agent not enrolled"' <<<"$BATCH" >/dev/null || fail "batch targets: $BATCH"
+BATCH_ID="$(jq -r .id <<<"$BATCH")"
+batch_done() { api GET "/fleet/batches/$BATCH_ID" | jq -e '.counts.succeeded == 1'; }
+wait_for 60 "batch task succeeded on the agent" batch_done || fail "batch did not complete"
+TASK_ID="$(api GET "/fleet/batches/$BATCH_ID" | jq -r .tasks[0].task_id)"
+api GET "/servers/$SERVER_ID/tasks/$TASK_ID" | jq -e --arg b "$BATCH_ID" '.batch_id == $b and (.result.timezone | length > 0)' >/dev/null || fail "batch task result"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'fleet.batch'")" = 1 ] || fail "fleet.batch audit entry"
+
+# A webhook that answers 503 twice: the job queue retries (30 s, then 60 s) and the third attempt is delivered.
+FLAKY="$(mktemp)"
+python3 "$(dirname "$0")/webhook-receiver.py" 18098 "$FLAKY" 2 &
+FLAKY_PID=$!
+FL_ID="$(api POST /alerts/channels "$(jq -nc --arg u "http://$GW:18098/flaky" '{name:"ci flaky",kind:"webhook",enabled:true,config:{url:$u}}')" | jq -r .channel.id)"
+RULE_ID="$(api POST /alerts/rules "$(jq -nc --arg g "$GROUP_ID" --arg c "$FL_ID" '{name:"ci group cpu",group_id:$g,metric:"cpu",threshold:0.1,duration_minutes:1,channel_ids:[$c],enabled:true}')" | jq -r .id)"
+retrying() { api GET "/alerts/events?limit=50" | jq -e '[.events[] | select(.rule_name == "ci group cpu" and .state == "firing" and .pending == 1)] | length == 1'; }
+wait_for 120 "group alert queued and retrying" retrying || fail "group alert not retrying"
+delivered() { api GET "/alerts/events?limit=50" | jq -e '[.events[] | select(.rule_name == "ci group cpu" and .delivered == 1 and .pending == 0)] | length == 1'; }
+wait_for 180 "delivered on the third attempt" delivered || fail "retried notification not delivered"
+[ "$(jq -s '[.[] | .status] | map(tostring) | join(",")' -r "$FLAKY")" = "503,503,204" ] || fail "attempts: $(jq -c .status "$FLAKY")"
+[ "$(jq -rs 'map(.headers["X-Osriva-Delivery"]) | unique | length' "$FLAKY")" = 1 ] || fail "delivery id changed between retries"
+[ "$(pg "SELECT attempts FROM jobs WHERE kind = 'notification.deliver' AND status = 'succeeded' ORDER BY updated_at DESC LIMIT 1")" = 3 ] || fail "job attempts"
+api GET /jobs | jq -e '.counts.succeeded >= 1' >/dev/null || fail "jobs endpoint"
+kill "$FLAKY_PID" || true
+[ "$(pg "SELECT string_agg(name, ',' ORDER BY name) FROM leases")" = "janitor,monitor" ] || fail "loop leases"
+
+# A group used by an alert rule cannot be deleted.
+! api DELETE "/server-groups/$GROUP_ID" >/dev/null 2>&1 || fail 'deleted a group used by a rule'
+api DELETE "/alerts/rules/$RULE_ID" >/dev/null
+api DELETE "/server-groups/$GROUP_ID" >/dev/null || fail "delete group"
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

@@ -47,6 +47,10 @@ type Store struct {
 	alertStates map[[2]string]*store.AlertState
 	alertEvents []*store.AlertEvent
 	rollups     map[string][]store.MetricRollup
+	groups      map[string]*store.ServerGroup
+	batches     map[string]*store.TaskBatch
+	jobs        map[string]*store.Job
+	leases      map[string]lease
 }
 
 var _ store.Store = (*Store)(nil)
@@ -63,6 +67,8 @@ func New() *Store {
 		backupKeys: map[string]*store.BackupKey{}, backups: map[string]*store.Backup{}, policies: map[string]*store.BackupPolicy{},
 		channels: map[string]*store.NotificationChannel{}, rules: map[string]*store.AlertRule{},
 		alertStates: map[[2]string]*store.AlertState{}, rollups: map[string][]store.MetricRollup{},
+		groups: map[string]*store.ServerGroup{}, batches: map[string]*store.TaskBatch{}, jobs: map[string]*store.Job{},
+		leases: map[string]lease{},
 	}
 }
 

@@ -90,6 +90,11 @@ func (s *Store) CreateAlertRule(_ context.Context, r *store.AlertRule) error {
 	if _, dup := s.rules[r.ID]; dup {
 		return store.ErrConflict
 	}
+	if r.GroupID != nil {
+		if _, ok := s.groups[*r.GroupID]; !ok {
+			return store.ErrNotFound
+		}
+	}
 	if r.ServerID != nil {
 		if _, ok := s.servers[*r.ServerID]; !ok {
 			return store.ErrNotFound
@@ -129,6 +134,11 @@ func (s *Store) UpdateAlertRule(_ context.Context, r *store.AlertRule) error {
 	old, ok := s.rules[r.ID]
 	if !ok {
 		return store.ErrNotFound
+	}
+	if r.GroupID != nil {
+		if _, ok := s.groups[*r.GroupID]; !ok {
+			return store.ErrNotFound
+		}
 	}
 	r.OrganizationID, r.CreatedBy, r.CreatedAt = old.OrganizationID, old.CreatedBy, old.CreatedAt
 	s.rules[r.ID] = copyRule(r)
@@ -187,6 +197,26 @@ func (s *Store) SetAlertEventDelivery(_ context.Context, id string, delivered, f
 	for _, e := range s.alertEvents {
 		if e.ID == id {
 			e.Delivered, e.Failed, e.DeliveryError = delivered, failed, errMsg
+			return nil
+		}
+	}
+	return store.ErrNotFound
+}
+
+func (s *Store) RecordAlertDelivery(_ context.Context, id string, ok bool, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, e := range s.alertEvents {
+		if e.ID == id {
+			if e.Pending > 0 {
+				e.Pending--
+			}
+			if ok {
+				e.Delivered++
+				return nil
+			}
+			e.Failed++
+			e.DeliveryError = store.AppendDeliveryError(e.DeliveryError, errMsg)
 			return nil
 		}
 	}
@@ -279,4 +309,16 @@ func (s *Store) PruneAudit(_ context.Context, before time.Time) (int, error) {
 	}
 	s.audit = kept
 	return n, nil
+}
+
+func (s *Store) GetAlertEvent(_ context.Context, id string) (*store.AlertEvent, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, e := range s.alertEvents {
+		if e.ID == id {
+			c := *e
+			return &c, nil
+		}
+	}
+	return nil, store.ErrNotFound
 }

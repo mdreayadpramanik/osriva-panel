@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type AlertEvent, type AlertMetric, type AlertRule, type ChannelKind, type NotificationChannel, type Server } from "@/lib/api";
+import { api, errorMessage, type AlertEvent, type AlertMetric, type AlertRule, type ChannelKind, type NotificationChannel, type Server, type ServerGroup } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, EmptyState, LoadingBlock, Modal, PageHeader, Table, Td, Th } from "@/components/ui";
@@ -22,6 +22,7 @@ export default function AlertsPage() {
   const [rules, setRules] = useState<AlertRule[]>([]);
   const [events, setEvents] = useState<AlertEvent[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
+  const [groups, setGroups] = useState<ServerGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [editingRule, setEditingRule] = useState<AlertRule | "new" | null>(null);
@@ -30,16 +31,18 @@ export default function AlertsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [c, r, e, s] = await Promise.all([
+      const [c, r, e, s, g] = await Promise.all([
         api<{ channels: NotificationChannel[] }>("/alerts/channels"),
         api<{ rules: AlertRule[] }>("/alerts/rules"),
         api<{ events: AlertEvent[] }>("/alerts/events?limit=50"),
         api<{ servers: Server[] }>("/servers").catch(() => ({ servers: [] as Server[] })),
+        api<{ groups: ServerGroup[] }>("/server-groups").catch(() => ({ groups: [] as ServerGroup[] })),
       ]);
       setChannels(c.channels);
       setRules(r.rules);
       setEvents(e.events);
       setServers(s.servers);
+      setGroups(g.groups);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -63,7 +66,8 @@ export default function AlertsPage() {
   }
 
   const writable = can("alerts.write");
-  const serverName = (id: string | null) => (id ? servers.find((s) => s.id === id)?.name ?? "unknown server" : "all servers");
+  const target = (r: AlertRule) =>
+    r.group_id ? `group ${groups.find((g) => g.id === r.group_id)?.name ?? "?"}` : r.server_id ? servers.find((s) => s.id === r.server_id)?.name ?? "unknown server" : "all servers";
   const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? "?";
 
   return (
@@ -107,6 +111,7 @@ export default function AlertsPage() {
                       </Td>
                       <Td className="text-xs">
                         {e.delivered} sent{e.failed > 0 && <span className="text-danger">, {e.failed} failed</span>}
+                        {e.pending > 0 && <span className="text-warning">, {e.pending} retrying</span>}
                         {e.delivery_error && <p className="max-w-xs text-[11px] text-danger">{e.delivery_error}</p>}
                       </Td>
                     </tr>
@@ -134,7 +139,7 @@ export default function AlertsPage() {
                     <tr key={r.id}>
                       <Td>
                         <p className="font-medium">{r.name}</p>
-                        <p className="text-[11px] text-muted">{serverName(r.server_id)}{!r.enabled && " · disabled"}</p>
+                        <p className="text-[11px] text-muted">{target(r)}{!r.enabled && " · disabled"}</p>
                       </Td>
                       <Td className="text-xs">
                         {metricInfo[r.metric].label}
@@ -206,6 +211,7 @@ export default function AlertsPage() {
           rule={editingRule === "new" ? null : editingRule}
           channels={channels}
           servers={servers}
+          groups={groups}
           onClose={() => setEditingRule(null)}
           onSaved={() => {
             setEditingRule(null);
@@ -227,10 +233,10 @@ export default function AlertsPage() {
   );
 }
 
-function RuleForm({ rule, channels, servers, onClose, onSaved }: { rule: AlertRule | null; channels: NotificationChannel[]; servers: Server[]; onClose: () => void; onSaved: () => void }) {
+function RuleForm({ rule, channels, servers, groups, onClose, onSaved }: { rule: AlertRule | null; channels: NotificationChannel[]; servers: Server[]; groups: ServerGroup[]; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = useState({
     name: rule?.name ?? "",
-    server_id: rule?.server_id ?? "",
+    target: rule?.group_id ? `g:${rule.group_id}` : rule?.server_id ? `s:${rule.server_id}` : "",
     metric: rule?.metric ?? ("cpu" as AlertMetric),
     threshold: rule?.threshold ?? 90,
     duration_minutes: rule?.duration_minutes ?? 5,
@@ -242,7 +248,8 @@ function RuleForm({ rule, channels, servers, onClose, onSaved }: { rule: AlertRu
   async function submit() {
     setBusy(true);
     setError(null);
-    const body = { ...f, server_id: f.server_id || null };
+    const { target, ...rest } = f;
+    const body = { ...rest, server_id: target.startsWith("s:") ? target.slice(2) : null, group_id: target.startsWith("g:") ? target.slice(2) : null };
     try {
       await (rule ? api(`/alerts/rules/${rule.id}`, { method: "PUT", body }) : api("/alerts/rules", { method: "POST", body }));
       onSaved();
@@ -258,10 +265,17 @@ function RuleForm({ rule, channels, servers, onClose, onSaved }: { rule: AlertRu
       <div className="flex flex-col gap-3 text-sm">
         <label className="flex flex-col gap-1">Name<input className={inputClass} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="CPU high" /></label>
         <label className="flex flex-col gap-1">
-          Server
-          <select className={inputClass} value={f.server_id} onChange={(e) => setF({ ...f, server_id: e.target.value })}>
+          Applies to
+          <select className={inputClass} value={f.target} onChange={(e) => setF({ ...f, target: e.target.value })}>
             <option value="">All servers</option>
-            {servers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {groups.length > 0 && (
+              <optgroup label="Server groups">
+                {groups.map((g) => <option key={g.id} value={`g:${g.id}`}>{g.name} ({g.server_ids.length})</option>)}
+              </optgroup>
+            )}
+            <optgroup label="Servers">
+              {servers.map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
+            </optgroup>
           </select>
         </label>
         <label className="flex flex-col gap-1">

@@ -59,8 +59,8 @@ type Options struct {
 	Argon2       auth.Argon2Params
 	Now          func() time.Time
 	// Login brute-force protection; defaults applied when nil.
-	LoginIPLimiter *ratelimit.KeyedLimiter
-	AccountLockout *ratelimit.Lockout
+	LoginIPLimiter ratelimit.Limiter
+	AccountLockout ratelimit.Locker
 }
 
 type Service struct {
@@ -72,8 +72,8 @@ type Service struct {
 	reauthWindow time.Duration
 	argon2       auth.Argon2Params
 	now          func() time.Time
-	ipLimiter    *ratelimit.KeyedLimiter
-	lockout      *ratelimit.Lockout
+	ipLimiter    ratelimit.Limiter
+	lockout      ratelimit.Locker
 	dummyHash    string
 }
 

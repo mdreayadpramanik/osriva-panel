@@ -28,6 +28,7 @@ type ruleDTO struct {
 	ID              string   `json:"id"`
 	Name            string   `json:"name"`
 	ServerID        *string  `json:"server_id"`
+	GroupID         *string  `json:"group_id"`
 	Metric          string   `json:"metric"`
 	Threshold       float64  `json:"threshold"`
 	DurationMinutes int      `json:"duration_minutes"`
@@ -50,6 +51,7 @@ type alertEventDTO struct {
 	Delivered     int     `json:"delivered"`
 	Failed        int     `json:"failed"`
 	DeliveryError string  `json:"delivery_error"`
+	Pending       int     `json:"pending"`
 	CreatedAt     string  `json:"created_at"`
 }
 
@@ -62,14 +64,14 @@ func (s *Server) toChannelDTO(r *http.Request, c *store.NotificationChannel) cha
 }
 
 func toRuleDTO(r *store.AlertRule) ruleDTO {
-	return ruleDTO{ID: r.ID, Name: r.Name, ServerID: r.ServerID, Metric: r.Metric, Threshold: r.Threshold, DurationMinutes: r.DurationMinutes,
+	return ruleDTO{ID: r.ID, Name: r.Name, ServerID: r.ServerID, GroupID: r.GroupID, Metric: r.Metric, Threshold: r.Threshold, DurationMinutes: r.DurationMinutes,
 		ChannelIDs: r.ChannelIDs, Enabled: r.Enabled, CreatedAt: ts(r.CreatedAt)}
 }
 
 func toAlertEventDTO(e *store.AlertEvent) alertEventDTO {
 	return alertEventDTO{ID: e.ID, RuleID: e.RuleID, RuleName: e.RuleName, ServerID: e.ServerID, ServerName: e.ServerName, Metric: e.Metric,
 		State: e.State, Value: e.Value, Threshold: e.Threshold, Message: monitor.Describe(e), Delivered: e.Delivered, Failed: e.Failed,
-		DeliveryError: e.DeliveryError, CreatedAt: ts(e.CreatedAt)}
+		DeliveryError: e.DeliveryError, Pending: e.Pending, CreatedAt: ts(e.CreatedAt)}
 }
 
 func (s *Server) monitorOr503(w http.ResponseWriter, r *http.Request) bool {

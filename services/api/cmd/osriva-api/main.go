@@ -18,14 +18,18 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/mdreayadpramanik/osriva-panel/migrations"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/config"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/httpapi"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
@@ -88,6 +92,17 @@ type runtime struct {
 	pg    *postgres.Store // nil when using the development memory store
 	id    *identity.Service
 	keys  *secrets.Keyring
+	// redis is set when OSRIVA_REDIS_URL shares rate limits between instances.
+	redis *redis.Client
+}
+
+// limiter returns a Redis-backed limiter when Redis is configured, otherwise an in-memory one.
+func (rt *runtime) limiter(name string, perSecond float64, burst int) ratelimit.Limiter {
+	local := ratelimit.NewKeyed(perSecond, burst)
+	if rt.redis == nil {
+		return local
+	}
+	return ratelimit.NewRedisLimiter(rt.redis, name, perSecond, burst, local, rt.log)
 }
 
 func setup(ctx context.Context) (*runtime, error) {
@@ -111,9 +126,28 @@ func setup(ctx context.Context) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	if cfg.RedisURL != "" {
+		rdb, err := ratelimit.NewRedisClient(cfg.RedisURL)
+		if err != nil {
+			return nil, err
+		}
+		pctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		if err := rdb.Ping(pctx).Err(); err != nil {
+			log.Warn("redis is not reachable: each instance limits on its own until it is", "err", err)
+		} else {
+			log.Info("rate limits and login lockouts are shared through redis", "addr", rdb.Options().Addr)
+		}
+		cancel()
+		rt.redis = rdb
+	}
+	var lockout ratelimit.Locker = ratelimit.NewLockout(10, 15*time.Minute, 15*time.Minute)
+	if rt.redis != nil {
+		lockout = ratelimit.NewRedisLockout(rt.redis, 10, 15*time.Minute, 15*time.Minute, lockout, log)
+	}
 	rt.keys = keys
 	rt.id, err = identity.New(identity.Options{
 		Store: rt.store, Keys: keys, Log: log,
+		LoginIPLimiter: rt.limiter("login", 0.2, 10), AccountLockout: lockout,
 		SessionTTL: cfg.SessionTTL, IdleTimeout: cfg.SessionIdleTimeout, ReauthWindow: cfg.ReauthWindow,
 	})
 	if err != nil {
@@ -183,13 +217,20 @@ func cmdServe() error {
 	fl, err := fleet.New(ctx, fleet.Options{
 		Store: rt.store, Identity: rt.id, Keys: rt.keys, Log: rt.log,
 		PanelURL: rt.cfg.PublicURL, AgentURL: rt.cfg.AgentPublicURL,
+		EnrollLimiter: rt.limiter("enroll", 0.2, 10),
 	})
 	if err != nil {
 		return err
 	}
+	queue := jobs.New(rt.store, rt.log, rt.id.Now)
+	lessor := jobs.NewLessor(rt.store, rt.log)
+	fl.UseLessor(lessor)
 	go fl.RunJanitor(ctx, 30*time.Second)
 	mon := monitor.New(rt.store, rt.id, rt.keys, rt.log, nil)
+	mon.UseQueue(queue)
+	mon.UseLessor(lessor)
 	go mon.Run(ctx, 30*time.Second)
+	go queue.Run(ctx, 5*time.Second)
 
 	dist, err := agentdist.Load(rt.cfg.AgentDistDir, rt.cfg.PublicURL)
 	if err != nil {
@@ -197,7 +238,8 @@ func cmdServe() error {
 	}
 	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, Monitor: mon, AgentDist: dist, DB: rt.store, Log: rt.log, Version: version,
+		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, AgentDist: dist,
+		APILimiter: rt.limiter("api", 20, 60), DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}
 	newServer := func(addr string, h http.Handler) *http.Server {

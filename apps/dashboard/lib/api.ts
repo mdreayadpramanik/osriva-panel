@@ -231,6 +231,7 @@ export type Task<R = unknown> = {
   finished_at: string | null;
   result: R | null;
   error: string;
+  batch_id?: string | null;
 };
 
 export type ServiceItem = { name: string; description?: string; state: string; detail?: string; startup: string };
@@ -427,6 +428,7 @@ export type AlertRule = {
   id: string;
   name: string;
   server_id: string | null;
+  group_id: string | null;
   metric: AlertMetric;
   threshold: number;
   duration_minutes: number;
@@ -446,5 +448,39 @@ export type AlertEvent = {
   delivered: number;
   failed: number;
   delivery_error: string;
+  pending: number;
   created_at: string;
+};
+
+export type ServerGroup = {
+  id: string;
+  name: string;
+  description: string;
+  server_ids: string[];
+  created_at: string;
+};
+export type BatchTask = {
+  task_id: string;
+  server_id: string;
+  server_name: string;
+  status: TaskStatus;
+  error: string;
+  started_at: string | null;
+  finished_at: string | null;
+};
+export type TaskBatch = {
+  id: string;
+  type: string;
+  params: Record<string, unknown>;
+  group_id: string | null;
+  target: string;
+  requested_by: string | null;
+  created_at: string;
+  counts: Partial<Record<TaskStatus, number>>;
+  tasks: BatchTask[];
+  skipped: { server_id: string; name: string; reason: string }[];
+};
+export type JobQueueStatus = {
+  counts: Record<"queued" | "running" | "succeeded" | "failed", number>;
+  recent_failures: { id: string; kind: string; status: string; attempts: number; max_attempts: number; last_error: string; created_at: string; updated_at: string }[];
 };

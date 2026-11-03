@@ -14,12 +14,14 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"net/textproto"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 )
 
@@ -83,9 +85,9 @@ func (s *sender) Send(ctx context.Context, c *store.NotificationChannel, secret 
 	case "webhook":
 		return s.webhook(ctx, c, secret, ev)
 	case "email":
-		return s.email(ctx, c, secret, ev)
+		return smtpPermanent(s.email(ctx, c, secret, ev))
 	}
-	return fmt.Errorf("unknown channel kind %q", c.Kind)
+	return jobs.Permanent(fmt.Errorf("unknown channel kind %q", c.Kind))
 }
 
 func (s *sender) webhook(ctx context.Context, c *store.NotificationChannel, secret string, ev *store.AlertEvent) error {
@@ -121,7 +123,12 @@ func (s *sender) webhook(ctx context.Context, c *store.NotificationChannel, secr
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return fmt.Errorf("webhook answered HTTP %d", resp.StatusCode)
+		err := fmt.Errorf("webhook answered HTTP %d", resp.StatusCode)
+		// Other client errors will not change on a retry.
+		if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout && resp.StatusCode != http.StatusTooManyRequests {
+			return jobs.Permanent(err)
+		}
+		return err
 	}
 	return nil
 }
@@ -197,4 +204,14 @@ func (s *sender) email(ctx context.Context, c *store.NotificationChannel, passwo
 		return fmt.Errorf("smtp: %w", err)
 	}
 	return cl.Quit()
+}
+
+// smtpPermanent marks SMTP 5xx replies (bad recipient, rejected sender, auth
+// refused) as permanent; 4xx replies and network errors are retried.
+func smtpPermanent(err error) error {
+	var te *textproto.Error
+	if errors.As(err, &te) && te.Code >= 500 {
+		return jobs.Permanent(err)
+	}
+	return err
 }

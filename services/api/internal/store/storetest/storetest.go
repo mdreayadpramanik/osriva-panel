@@ -36,6 +36,11 @@ func Run(t *testing.T, newStore func(t *testing.T) store.Store) {
 		"CMS":                 testCMS,
 		"Backups":             testBackups,
 		"Monitor":             testMonitor,
+		"ServerGroups":        testServerGroups,
+		"TaskBatches":         testTaskBatches,
+		"Jobs":                testJobs,
+		"Leases":              testLeases,
+		"AlertDelivery":       testAlertDelivery,
 	}
 	for name, fn := range tests {
 		t.Run(name, func(t *testing.T) {

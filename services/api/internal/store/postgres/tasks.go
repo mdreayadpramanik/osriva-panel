@@ -11,7 +11,7 @@ import (
 )
 
 const taskCols = `id::text, server_id::text, type, params, status, requested_by::text, created_at, expires_at,
-	started_at, finished_at, result, error, run_timeout_s`
+	started_at, finished_at, result, error, run_timeout_s, batch_id::text`
 
 func scanTask(row pgx.Row) (*store.Task, error) {
 	var t store.Task
@@ -19,7 +19,7 @@ func scanTask(row pgx.Row) (*store.Task, error) {
 	var params, result []byte
 	var timeoutS int
 	if err := row.Scan(&t.ID, &t.ServerID, &t.Type, &params, &status, &t.RequestedBy, &t.CreatedAt, &t.ExpiresAt,
-		&t.StartedAt, &t.FinishedAt, &result, &t.Error, &timeoutS); err != nil {
+		&t.StartedAt, &t.FinishedAt, &result, &t.Error, &timeoutS, &t.BatchID); err != nil {
 		return nil, mapErr(err)
 	}
 	t.Status, t.Params, t.Result = store.TaskStatus(status), params, result
@@ -48,6 +48,14 @@ func jsonOrNil(b json.RawMessage) any {
 }
 
 func (s *Store) CreateTask(ctx context.Context, t *store.Task) error {
+	return insertTask(ctx, s.pool, t)
+}
+
+type queryRower interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func insertTask(ctx context.Context, q queryRower, t *store.Task) error {
 	if t.Status == "" {
 		t.Status = store.TaskQueued
 	}
@@ -58,9 +66,9 @@ func (s *Store) CreateTask(ctx context.Context, t *store.Task) error {
 	if t.RunTimeout <= 0 {
 		t.RunTimeout = 5 * time.Minute
 	}
-	err := s.pool.QueryRow(ctx, `INSERT INTO agent_tasks (id, server_id, type, params, status, requested_by, expires_at, run_timeout_s)
-		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8) RETURNING created_at`,
-		t.ID, t.ServerID, t.Type, string(params), string(t.Status), t.RequestedBy, t.ExpiresAt, int(t.RunTimeout/time.Second)).Scan(&t.CreatedAt)
+	err := q.QueryRow(ctx, `INSERT INTO agent_tasks (id, server_id, type, params, status, requested_by, expires_at, run_timeout_s, batch_id)
+		VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9) RETURNING created_at`,
+		t.ID, t.ServerID, t.Type, string(params), string(t.Status), t.RequestedBy, t.ExpiresAt, int(t.RunTimeout/time.Second), t.BatchID).Scan(&t.CreatedAt)
 	t.Params = params
 	return mapErr(err)
 }

@@ -25,6 +25,7 @@ type taskDTO struct {
 	FinishedAt  *string         `json:"finished_at"`
 	Result      json.RawMessage `json:"result"`
 	Error       string          `json:"error"`
+	BatchID     *string         `json:"batch_id"`
 }
 
 func toTaskDTO(t *store.Task) taskDTO {
@@ -33,7 +34,7 @@ func toTaskDTO(t *store.Task) taskDTO {
 		res = json.RawMessage("null")
 	}
 	return taskDTO{ID: t.ID, Type: t.Type, Params: redacted(t.Params), Status: string(t.Status), RequestedBy: t.RequestedBy,
-		CreatedAt: ts(t.CreatedAt), StartedAt: tsPtr(t.StartedAt), FinishedAt: tsPtr(t.FinishedAt), Result: res, Error: t.Error}
+		CreatedAt: ts(t.CreatedAt), StartedAt: tsPtr(t.StartedAt), FinishedAt: tsPtr(t.FinishedAt), Result: res, Error: t.Error, BatchID: t.BatchID}
 }
 
 func (s *Server) handleQueueTask(w http.ResponseWriter, r *http.Request) {

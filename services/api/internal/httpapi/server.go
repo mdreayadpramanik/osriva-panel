@@ -13,6 +13,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/openapi"
@@ -26,6 +27,7 @@ type Options struct {
 	Identity       *identity.Service
 	Fleet          *fleet.Service
 	Monitor        *monitor.Service
+	Jobs           *jobs.Queue
 	AgentDist      *agentdist.Dist
 	DB             Pinger
 	Log            *slog.Logger
@@ -34,13 +36,14 @@ type Options struct {
 	SessionTTL     time.Duration
 	TrustedProxies []netip.Prefix
 	// APILimiter limits all /api requests per client IP; a default is used when nil.
-	APILimiter *ratelimit.KeyedLimiter
+	APILimiter ratelimit.Limiter
 }
 
 type Server struct {
 	id             *identity.Service
 	fleet          *fleet.Service
 	monitor        *monitor.Service
+	jobs           *jobs.Queue
 	dist           *agentdist.Dist
 	db             Pinger
 	log            *slog.Logger
@@ -48,12 +51,12 @@ type Server struct {
 	cookieSecure   bool
 	sessionTTL     time.Duration
 	trustedProxies []netip.Prefix
-	apiLimiter     *ratelimit.KeyedLimiter
+	apiLimiter     ratelimit.Limiter
 }
 
 func New(o Options) http.Handler {
 	s := &Server{
-		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
+		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, jobs: o.Jobs, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
 		sessionTTL: o.SessionTTL, trustedProxies: o.TrustedProxies, apiLimiter: o.APILimiter,
 	}
 	if s.log == nil {
@@ -134,6 +137,17 @@ func (s *Server) routes() http.Handler {
 			r.Delete("/alerts/rules/{ruleId}", s.handleDeleteRule)
 			r.Get("/alerts/events", s.handleListAlertEvents)
 
+			r.Get("/server-groups", s.handleListGroups)
+			r.Post("/server-groups", s.handleCreateGroup)
+			r.Get("/server-groups/{groupId}", s.handleGetGroup)
+			r.Put("/server-groups/{groupId}", s.handleUpdateGroup)
+			r.Delete("/server-groups/{groupId}", s.handleDeleteGroup)
+			r.Put("/server-groups/{groupId}/members", s.handleSetGroupMembers)
+			r.Get("/fleet/task-types", s.handleFleetTaskTypes)
+			r.Get("/fleet/batches", s.handleListBatches)
+			r.Post("/fleet/batches", s.handleRunBatch)
+			r.Get("/fleet/batches/{batchId}", s.handleGetBatch)
+			r.Get("/jobs", s.handleJobs)
 			r.Get("/servers", s.handleListServers)
 			r.Post("/servers", s.handleCreateServer)
 			r.Get("/servers/agent-endpoint", s.handleAgentEndpointInfo)

@@ -17,16 +17,19 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store/memstore"
 )
 
 const pw = "a long enough password"
 
 type env struct {
-	t   *testing.T
-	h   http.Handler
-	svc *identity.Service
-	db  *fakePinger
+	t     *testing.T
+	h     http.Handler
+	svc   *identity.Service
+	db    *fakePinger
+	store store.Store
+	keys  *secrets.Keyring
 }
 
 type fakePinger struct{ err error }
@@ -52,7 +55,7 @@ func newEnv(t *testing.T) *env {
 		}
 	}
 	db := &fakePinger{}
-	return &env{t: t, svc: svc, db: db, h: New(Options{Identity: svc, DB: db, Log: quiet, Version: "test", CookieSecure: true})}
+	return &env{t: t, svc: svc, db: db, store: st, keys: keys, h: New(Options{Identity: svc, DB: db, Log: quiet, Version: "test", CookieSecure: true})}
 }
 
 type client struct {

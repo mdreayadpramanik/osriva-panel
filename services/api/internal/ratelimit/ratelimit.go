@@ -1,5 +1,5 @@
-// Package ratelimit provides in-process rate limiting. State is per API
-// instance; multi-instance deployments need a shared backend (planned: Redis).
+// Package ratelimit provides rate limiting and login lockouts, in process or
+// shared between API instances through Redis (docs/adr/0012-fleet-groups-queue.md).
 package ratelimit
 
 import (
@@ -7,6 +7,23 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
+)
+
+// Limiter allows or refuses one event for a key (e.g. a client IP).
+type Limiter interface {
+	Allow(key string) bool
+}
+
+// Locker counts login failures per key and locks the key once a threshold is reached.
+type Locker interface {
+	Locked(key string) bool
+	Fail(key string) bool
+	Reset(key string)
+}
+
+var (
+	_ Limiter = (*KeyedLimiter)(nil)
+	_ Locker  = (*Lockout)(nil)
 )
 
 // maxKeys bounds memory use; idle entries are pruned when it is exceeded.
