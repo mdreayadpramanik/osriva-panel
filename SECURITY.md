@@ -45,12 +45,15 @@ a security contact address and a PGP key.)*
 | CMS (WordPress) | Official pinned images; MariaDB on a private network without published ports; WordPress on 127.0.0.1; database password generated on the server; admin password shown once and redacted (any `*password*` parameter) from task records and audit; user values reach WP-CLI only as environment variables; read operations skip plugin and theme code; objects not labelled by OSRIVA are never reused or removed; deleting data needs re-auth and a typed confirmation | `agent/internal/tasks/cms.go`, ADR-0009 |
 | Backups | age (X25519) encryption; the agent only receives the recipient, the identity is stored encrypted in the panel, sent only for verify/restore and redacted (any `*_key` parameter) from task records; recovery-key export needs re-auth and is audited; archives verified (file hash, full decrypt and read) before any restore; extraction refuses traversal, absolute paths and symlink tricks; restores need re-auth plus a typed confirmation; control-plane volumes refused; files 0600 in a 0700 directory | `agent/internal/tasks/backup.go`, `fleet/backup.go`, ADR-0010 |
 | Alerts and notifications | Webhooks signed with HMAC-SHA256 (timestamp + body), 256-bit secret shown once, redirects not followed, 10 s timeout; SMTP STARTTLS required when selected, PLAIN auth never on plain connections; channel secrets AES-GCM encrypted; webhook paths kept out of the audit log and masked for readers; CR/LF refused in names and stripped from subjects; separate `alerts.read` / `alerts.write` permissions; audit retention changes need `settings.write` + re-auth and every cleanup is audited | `services/api/internal/monitor`, ADR-0011 |
+| Fleet and jobs | Batches only for an allowlist of task types (no file, container, app, site or backup tasks), each server task checked like a single one (permission class, re-auth once per batch, audit with the batch id), at most 200 servers; job payloads hold only ids; webhook retries keep one delivery id so receivers can drop duplicates; groups used by alert rules cannot be deleted (no silent widening to all servers) | `fleet/groups.go`, `internal/jobs`, ADR-0012 |
 | Installer | `plan` changes nothing; every change needs confirmation (or `--yes`); secrets generated locally into a 0600 file; verified database backup before upgrades with automatic rollback; `--purge` requires a typed confirmation; never touches firewall, SSH, disk or network settings | `installer/osriva-install.sh` |
 
 ## Known limitations and risks
 
-* **Rate limiting and lockout are in-process.** With several API instances,
-  each one has its own counters. A shared backend (Redis) is planned.
+* **Rate limiting and lockout are in-process unless `OSRIVA_REDIS_URL` is set.** With
+  several API instances and no Redis, each one has its own counters. With Redis, keys
+  are hashed (no IPs or e-mail addresses stored); if Redis is unreachable each instance
+  falls back to its own limiter (ADR-0012). The Redis lockout uses a fixed window.
 * **Account lockout can be abused for denial of service:** anyone who knows an
   email can lock that account for 15 minutes. This is the usual trade-off. The
   owner can still sign in after the lock expires, and per-IP limiting slows mass attempts.

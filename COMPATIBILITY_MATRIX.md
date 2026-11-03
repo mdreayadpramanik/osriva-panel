@@ -148,3 +148,15 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).
+
+## Fleet, job queue and rate limits (Phase 9a)
+
+"System tests run 41638738285" is the `System tests` workflow at commit `55d34cb` (2026-11-03).
+
+| Feature | Status | Evidence / notes |
+|---------|--------|------------------|
+| Server groups, fleet batches on Linux agents (Ubuntu 24.04) | SUPPORTED | System tests run 41638738285 |
+| Fleet batches on Windows agents | PARTIALLY_SUPPORTED | Browser check on Windows 11 (`system.time` batch); not in CI |
+| Job queue and leases on PostgreSQL 17 | SUPPORTED | CI run 41638738815 (store contract), System tests run 41638738285 |
+| Shared rate limits with Redis 7 | PARTIALLY_SUPPORTED | Go tests against Redis 7 in CI run 41638738815; not in the Compose stack |
+| Several API instances behind a load balancer | NOT_TESTED | Designed for it (leases, SKIP LOCKED, Redis); never run end to end |

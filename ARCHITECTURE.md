@@ -204,11 +204,12 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
   warning and loses all data on restart.
 * **Single server:** `docker-compose.yml`: Caddy (only public service, 80/443),
   dashboard, API, a one-shot migrator, and PostgreSQL on an internal network
-  with no published ports. Redis is not included because nothing uses it yet.
-  It will be added with the background worker.
-* **Multi-server / HA:** not implemented. The API is stateless apart from the
-  in-memory rate limiters (which will move to Redis in Phase 8/9), so it can
-  later sit behind a load balancer. High availability is **not** claimed.
+  with no published ports. Redis is not included: the job queue uses PostgreSQL, and
+  Redis (`OSRIVA_REDIS_URL`, optional) only shares rate limits between API instances.
+* **Multi-instance / HA:** prepared, not tested end to end. Periodic loops hold a
+  PostgreSQL lease so only one instance runs them; jobs are claimed with `SKIP LOCKED`;
+  rate limits are shared through Redis when configured. Long-poll wake-ups are still
+  per instance (up to 25 s delay). High availability is **not** claimed (ADR-0012).
 
 ## 8. Planned architecture (summary)
 
@@ -217,7 +218,8 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
   separate from the reverse-proxied API because the API must verify the client
   certificate itself. It reports inventory every 60 s and accepts **no commands**
   yet. Typed, allowlisted tasks with real exit status arrive in Phase 3.
-* **Worker / task queue (Phase 4+):** PostgreSQL-backed job table first
-  (`SELECT … FOR UPDATE SKIP LOCKED`), Redis only if needed.
+* **Job queue (Phase 9a, implemented):** PostgreSQL `jobs` table claimed with
+  `SELECT … FOR UPDATE SKIP LOCKED`, leases and exponential back-off
+  ([ADR-0012](docs/adr/0012-fleet-groups-queue.md)). Used for alert notifications.
 * **Adapters/plugins (Phase 13):** out-of-process plugins over gRPC/stdio with a
   signed manifest, so third-party code never runs inside the Core API process.

@@ -13,7 +13,8 @@
 - [x] PostgreSQL store + migrator (contract suite passed in CI on PostgreSQL 17)
 - [~] Docker Compose stack (images build in CI; `docker compose up` not yet verified)
 - [ ] Add verbatim AGPL-3.0 / Apache-2.0 license texts
-- [ ] OpenAPI ↔ handler contract test; generate `packages/api-client` from the spec
+- [x] OpenAPI ↔ router contract test (every /api/v1 route documented; Phase 9a)
+- [ ] Generate `packages/api-client` from the spec
 - [ ] Playwright e2e: login, MFA, user CRUD, audit
 - [ ] ESLint for the dashboard; `govulncheck` in CI
 - [ ] Admin password reset, MFA recovery codes, TOTP QR code
@@ -110,9 +111,22 @@
 
 - [x] Alert rules (cpu, memory, disk, load, offline, backup), signed webhooks, SMTP e-mail (CI run 41609898762)
 - [x] Hourly metric rollups (90 days), audit retention (CI run 41609898762)
-- [ ] Notification queue with retries; silences and maintenance windows (Phase 9 / 8b)
+- [x] Notification queue with retries (Phase 9a, System tests run 41638738285)
+- [ ] Silences and maintenance windows (8b)
 - [ ] Automation: scheduled actions and remediation (8b)
 - [ ] Slack / Telegram / Matrix adapters (webhooks work with any receiver today)
+
+## Phase 9a: Fleet (done)
+
+- [x] Server groups; alert rules for a group (System tests run 41638738285)
+- [x] Fleet batches: one allowlisted task on up to 200 online servers, per-server status and results (System tests run 41638738285)
+- [x] PostgreSQL job queue with leases, back-off and permanent errors; alert notifications retried (System tests run 41638738285)
+- [x] Leases so periodic loops run in one API process, released on shutdown (System tests run 41638738285)
+- [~] Optional Redis for shared rate limits and login lockout (Go tests against Redis 7 in CI; not in the Compose stack or system test)
+- [ ] Shared long-poll wake-ups across API instances (LISTEN/NOTIFY or Redis pub/sub)
+- [ ] Multi-instance deployment behind a load balancer, tested end to end
+- [ ] Staged rollouts, scheduled batches, stop on failure (with automation, 8b)
+- [ ] Fleet health overview (agent versions, certificate expiry, outdated agents)
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

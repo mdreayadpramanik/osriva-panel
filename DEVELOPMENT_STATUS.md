@@ -1,10 +1,40 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **8a (alerts, notifications, retention) done** · Next: **Phase 9 (multi-server fleet, queues) or the pending 5b / 6b / 7b / 8b items**
+Last updated: **2026-11-03** · Current phase: **9a (server groups, fleet batches, job queue) done** · Next: **Phase 10 (Provider Mode) or the pending 5b / 6b / 7b / 8b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, and alert by signed webhook or e-mail.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, and group servers to run one task across many of them.
+
+## Phase 9a report (server groups, fleet batches, job queue, leases, shared rate limits)
+
+Design: [ADR-0012](docs/adr/0012-fleet-groups-queue.md). Evidence: `System tests` run 41638738285 and `CI` run
+41638738815 (commit `55d34cb`, 2026-11-03, all jobs passed). System tests runs 41635158966 and 41637022452 found a real
+bug: after an API restart the old process's loop lease blocked alert evaluation and audit retention for up to 90 s.
+The process now releases its leases at the start of shutdown, before agent long polls are drained.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Server groups (`servers.read` / `servers.write`), unique names, members from the organization only | store contract (memory + PostgreSQL 17), e2e test; Ubuntu CI |
+| Alert rules for a group; a group used by a rule cannot be deleted (409) | e2e test (a server outside the group does not fire); Ubuntu CI: group CPU rule fired, delete refused |
+| Fleet batches: one allowlisted task on up to 200 servers, same validation, permissions, re-auth and audit as single tasks; offline, pending and revoked servers skipped with a reason; batch and tasks stored in one transaction | unit + e2e tests (two agents over mTLS, file/container/hostname tasks refused, re-auth for SSH keys); Ubuntu CI: batch on the real agent, pending server skipped, `fleet.batch` audited |
+| PostgreSQL job queue: `SKIP LOCKED`, 2-minute leases, back-off 30 s · 1 · 2 · 4 · 8 min, 6 attempts, permanent errors (HTTP 4xx except 408/429, SMTP 5xx) | unit tests with a fake clock; store contract; Ubuntu CI: webhook answered 503, 503, then delivered on attempt 3 with the same `X-Osriva-Delivery` id |
+| Alert events show pending / delivered / failed per channel; `GET /api/v1/jobs` (`settings.read`) | e2e test; Ubuntu CI |
+| Leases: alert evaluation, rollups, retention and the janitor run in one API process; released on shutdown | store contract; Ubuntu CI: `leases` holds `janitor` and `monitor`; retention ran right after a restart |
+| Optional `OSRIVA_REDIS_URL`: shared per-IP limits (API, login, enrolment) and login lockout; in-memory fallback when Redis is down | unit tests against Redis 7 in CI (two limiters share one bucket, lock visible to every instance, keys hashed and expiring); fallback test with no Redis |
+| OpenAPI contract test: every `/api/v1` route is documented with its method, and the YAML parses (it caught an existing YAML error) | `go test` |
+| Dashboard: Fleet page (groups, run a batch, per-server status and results), group target in alert rules, retrying count, job queue card, roadmap corrected | `tsc`; browser on Windows 11 with a real agent: group created, batch ran (1 succeeded, 1 skipped), result shown, alert to an unreachable webhook shown as "1 retrying" |
+
+### Limitations
+
+* **Redis:** it is not in the Compose stack and not exercised by the system test; only the Go tests use a real Redis.
+  Several API instances behind a load balancer have not been tested end to end, and HA is not claimed.
+* **Long-poll wake-ups:** still per process. A task queued on another instance reaches its agent within 25 s.
+* **Batches:** no staged rollout, schedule or stop-on-failure. Only the allowlisted types can run in a batch.
+* **Crashed holder:** when the process holding a lease crashes, the loops pause for up to 90 s until the lease expires.
+* **Silences, maintenance windows and automation (8b):** not done.
 
 ## Phase 8a report (alerts, notifications, metrics and audit retention)
 
@@ -27,7 +57,7 @@ sent a rule without channels as `NULL`; fixed.
 
 ### Limitations
 
-* Notifications are sent synchronously by the evaluation loop, with no retries or queue (Phase 9).
+* Notifications were sent synchronously without retries; Phase 9a added the job queue.
 * No silences, maintenance windows, escalation or per-rule repeat reminders.
 * Automation (scheduled actions, remediation) is not done (8b).
 * Hourly rollups do not include per-disk series, only the fullest disk.
@@ -336,6 +366,7 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 7a | Encrypted, verified backups and restores (volumes, WordPress), schedules | ✅ Done |
 | 7b | Remote backup storage, database services | Pending (remote storage needs credentials) |
 | 8a | Alerts, webhooks, e-mail, metric rollups, audit retention | ✅ Done |
-| 8b | Automation, silences, notification queue | Pending |
-| 9 | Multi-server fleet, server groups, Redis-backed queues | ⏭ Next |
-| 10–14 | See [TASKS.md](TASKS.md) | Not started |
+| 8b | Automation, silences, maintenance windows | Pending (notification queue done in 9a) |
+| 9a | Server groups, fleet batches, PostgreSQL job queue, loop leases, optional Redis rate limits | ✅ Done (multi-instance HA not tested) |
+| 10 | Provider Mode (data centers, nodes, Proxmox adapter) | ⏭ Next |
+| 11–14 | See [TASKS.md](TASKS.md) | Not started |
