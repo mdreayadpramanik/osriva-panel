@@ -90,6 +90,14 @@
 - [ ] Sharing 80/443 with the control-plane Caddy on single-server installs
 - [ ] Redirects, basic auth, static sites, per-site access logs
 
+## Phase 6a: WordPress (done)
+
+- [x] WordPress from the official images with WP-CLI: install, info, checksum verification, updates, remove (CI run 41599607565)
+- [x] One-time admin password; database password never leaves the server (CI run 41599607565)
+- [ ] Staging, clone, migrate (`wp search-replace`), change the site URL (Phase 6b)
+- [ ] Other CMSes (Joomla, Drupal, Ghost …); multisite
+- [ ] Backups before updates (Phase 7)
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters

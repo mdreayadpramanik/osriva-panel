@@ -112,6 +112,17 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Control-plane host (80/443 already used) | PARTIALLY_SUPPORTED | Proxy works on other ports; public ACME needs 80/443 |
 | Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
 
+## CMS: WordPress (Phase 6a)
+
+"System tests run 41599607565" is the `System tests` workflow at commit `d08a569` (2026-11-03).
+
+| Platform / feature | Status | Evidence / notes |
+|--------------------|--------|------------------|
+| Ubuntu 24.04 + Docker: WordPress 6.6 (php8.3-apache), MariaDB 11.4, WP-CLI 2.11 | SUPPORTED | System tests run 41599607565 |
+| WordPress behind the OSRIVA proxy with a public domain | NOT_TESTED | Same limitation as Phase 5a |
+| Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
+| Joomla, Drupal, Ghost and other CMSes | UNSUPPORTED | Not implemented |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).

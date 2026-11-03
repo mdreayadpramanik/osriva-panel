@@ -1,10 +1,36 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **5a (reverse proxy, websites, SSL) done** · Next: **Phase 5b (DNS provider adapters) or Phase 6 (CMS)**
+Last updated: **2026-11-03** · Current phase: **6a (WordPress) done** · Next: **Phase 6b (staging, clone, migrate) or Phase 7 (databases, backups)**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, and serve them on domains through a managed Caddy proxy with automatic HTTPS.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, and install and maintain WordPress.
+
+## Phase 6a report (WordPress)
+
+Design: [ADR-0009](docs/adr/0009-cms-wordpress.md). Evidence: `System tests` run 41599607565 (commit `d08a569`,
+2026-11-03, both jobs passed) with the official WordPress, MariaDB and WP-CLI images on Ubuntu 24.04. Two earlier
+runs failed because of the test script itself (a curl timeout racing the long poll, and `grep -q` with `pipefail`), not the product.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| `cms.wp.install`: private network, MariaDB (health check, no published port), WordPress on 127.0.0.1, labelled volumes, WP-CLI install | fake-Engine unit tests; Ubuntu CI: front page served with the title, DB port not published, loopback binding checked |
+| Generated admin password shown once, redacted from task records and audit; database password never leaves the server | unit + e2e tests; Ubuntu CI: admin login with the generated password (302 to wp-admin), PostgreSQL checked for the password |
+| User values passed to WP-CLI as environment variables only | unit test (title with quotes and `197121id)`) |
+| `cms.wp.info`: core version and update, plugins, themes, site URL (without running plugin code) | unit test (incl. a 6000-character line); Ubuntu CI (core 6.x, akismet listed) |
+| `cms.wp.verify`: checksums against wordpress.org | Ubuntu CI: core and plugins verified |
+| `cms.wp.update` core / plugins / themes | Ubuntu CI: plugin update |
+| `cms.remove` keeping or deleting data; refuses objects it did not create | unit tests; Ubuntu CI: volumes kept, then deleted |
+| Optional domain creates a website; removing the instance removes it | e2e test |
+| Dashboard CMS tab (install, one-time password, info, verify, updates, remove with typed confirmation) | `tsc`; browser with a real agent on Windows 11 (install form, one-time password, honest failure on Windows) |
+
+### Not done / limitations
+
+* Staging, clone and migration, URL changes and backups are not done yet (6b / Phase 7).
+* Only WordPress; no other CMS. Core-update rollback is not automatic: take a backup first (Phase 7).
+* WordPress through a public domain with Let's Encrypt is NOT_TESTED (same reason as Phase 5a).
 
 ## Phase 5a report (reverse proxy, websites, SSL)
 
@@ -251,5 +277,7 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 4a | Docker manager (containers, images, volumes, networks) | ✅ Done |
 | 4b | Git deployments (Dockerfile, static, Node.js), history, rollback | ✅ Done (ZIP, Compose, private repos deferred) |
 | 5a | Reverse proxy (Caddy), websites, automatic HTTPS, certificate status, DNS hint | ✅ Done (Let's Encrypt NOT_TESTED) |
-| 5b | DNS provider adapters | ⏭ Next (needs provider credentials) |
-| 6–14 | See [TASKS.md](TASKS.md) | Not started |
+| 5b | DNS provider adapters | Pending (needs provider credentials) |
+| 6a | WordPress install, info, checksum verification, updates, remove | ✅ Done |
+| 6b | Staging, clone, migrate, other CMSes | ⏭ Next |
+| 7–14 | See [TASKS.md](TASKS.md) | Not started |
