@@ -412,7 +412,8 @@ PAGE="$(curl -fsS http://127.0.0.1:18097/)"; grep -q Defaced <<<"$PAGE" || fail 
 wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/restore" | jq -r .id)" | jq -e '.status == "succeeded" and .result.database == true and (.result.stopped | length) == 1' >/dev/null || fail "WordPress restore"
 wait_for 60 "WordPress back" curl -fsS -o /dev/null http://127.0.0.1:18097/ || fail "WordPress down after restore"
 PAGE="$(curl -fsS http://127.0.0.1:18097/)"; grep -q "OSRIVA backup blog" <<<"$PAGE" || fail "database not restored"
-[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18097/osriva-marker.txt)" = 404 ] || fail "files not restored"
+sudo docker exec osriva-wp-cibk test -e /var/www/html/osriva-marker.txt && fail "files not restored (marker still there)"
+sudo docker exec osriva-wp-cibk test -f /var/www/html/wp-config.php || fail "wp-config.php missing after restore"
 
 POL="$(api POST "/servers/$SERVER_ID/backup-policies" '{"kind":"volume","target":"osriva-ci-vol","interval_hours":24,"keep":2}' | jq -r .id)"
 has_scheduled() { api GET "/servers/$SERVER_ID/backups" | jq -e --arg p "$POL" '[.backups[] | select(.policy_id == $p and .status == "succeeded")] | length == 1'; }
