@@ -14,6 +14,7 @@ const nav: NavItem[] = [
   { href: "/", label: "Overview" },
   { href: "/servers", label: "Servers", permission: "servers.read" },
   { href: "/users", label: "Users & Permissions", permission: "users.read" },
+  { href: "/alerts", label: "Alerts", permission: "alerts.read" },
   { href: "/audit", label: "Audit Log", permission: "audit.read" },
   { href: "/settings", label: "Settings", permission: "settings.read" },
   { href: "/account", label: "My Account" },

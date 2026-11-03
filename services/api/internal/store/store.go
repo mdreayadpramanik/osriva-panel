@@ -121,6 +121,7 @@ type Store interface {
 	ProxyStore
 	CMSStore
 	BackupStore
+	MonitorStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -449,4 +450,93 @@ type BackupStore interface {
 	ListBackupPolicies(ctx context.Context, serverID string) ([]BackupPolicy, error)
 	MarkBackupPolicyRun(ctx context.Context, id string, at time.Time) error
 	DeleteBackupPolicy(ctx context.Context, id string) error
+}
+
+// ---- Alerts, notifications, long-term metrics (Phase 8) ----
+
+type NotificationChannel struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	Kind           string // webhook | email
+	Config         json.RawMessage
+	SecretEnc      []byte
+	Enabled        bool
+	CreatedBy      *string
+	CreatedAt      time.Time
+}
+
+type AlertRule struct {
+	ID              string
+	OrganizationID  string
+	Name            string
+	ServerID        *string // nil: every active server of the organization
+	Metric          string
+	Threshold       float64
+	DurationMinutes int
+	ChannelIDs      []string
+	Enabled         bool
+	CreatedBy       *string
+	CreatedAt       time.Time
+}
+
+type AlertState struct {
+	RuleID    string
+	ServerID  string
+	Firing    bool
+	Since     time.Time
+	Value     float64
+	UpdatedAt time.Time
+}
+
+type AlertEvent struct {
+	ID             string
+	OrganizationID string
+	RuleID         *string
+	RuleName       string
+	ServerID       *string
+	ServerName     string
+	Metric         string
+	State          string // firing | resolved | test
+	Value          float64
+	Threshold      float64
+	Delivered      int
+	Failed         int
+	DeliveryError  string
+	CreatedAt      time.Time
+}
+
+type MetricRollup struct {
+	ServerID string
+	Hour     time.Time
+	Data     json.RawMessage
+}
+
+type MonitorStore interface {
+	CreateChannel(ctx context.Context, c *NotificationChannel) error
+	GetChannel(ctx context.Context, id string) (*NotificationChannel, error)
+	ListChannels(ctx context.Context, orgID string) ([]NotificationChannel, error)
+	UpdateChannel(ctx context.Context, c *NotificationChannel) error
+	// DeleteChannel also removes the channel from every alert rule.
+	DeleteChannel(ctx context.Context, id string) error
+
+	CreateAlertRule(ctx context.Context, r *AlertRule) error
+	GetAlertRule(ctx context.Context, id string) (*AlertRule, error)
+	// ListAlertRules lists an organization's rules, or all rules when orgID is empty.
+	ListAlertRules(ctx context.Context, orgID string) ([]AlertRule, error)
+	UpdateAlertRule(ctx context.Context, r *AlertRule) error
+	DeleteAlertRule(ctx context.Context, id string) error
+
+	GetAlertState(ctx context.Context, ruleID, serverID string) (*AlertState, error)
+	PutAlertState(ctx context.Context, s *AlertState) error
+
+	InsertAlertEvent(ctx context.Context, e *AlertEvent) error
+	SetAlertEventDelivery(ctx context.Context, id string, delivered, failed int, errMsg string) error
+	ListAlertEvents(ctx context.Context, orgID string, limit int) ([]AlertEvent, error)
+
+	UpsertRollup(ctx context.Context, r *MetricRollup) error
+	ListRollups(ctx context.Context, serverID string, since time.Time) ([]MetricRollup, error)
+	PruneRollups(ctx context.Context, before time.Time) (int, error)
+	// PruneAudit deletes audit entries older than before (retention).
+	PruneAudit(ctx context.Context, before time.Time) (int, error)
 }

@@ -344,3 +344,25 @@ var classPermission = map[string]string{
 	// Adding or removing SSH keys grants or revokes login access to the server.
 	agenttask.ClassAccess: rbac.ServersAccess,
 }
+
+// MetricRollups returns hourly aggregates for windows longer than the 24 h of raw samples (up to 90 days).
+func (s *Service) MetricRollups(ctx context.Context, actor *identity.Principal, serverID string, window time.Duration) ([]json.RawMessage, error) {
+	if err := s.id.Require(ctx, actor, rbac.ServersRead); err != nil {
+		return nil, err
+	}
+	if _, err := s.getInOrg(ctx, actor, serverID); err != nil {
+		return nil, err
+	}
+	if window > 90*24*time.Hour {
+		window = 90 * 24 * time.Hour
+	}
+	rows, err := s.store.ListRollups(ctx, serverID, s.id.Now().Add(-window))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]json.RawMessage, len(rows))
+	for i := range rows {
+		out[i] = rows[i].Data
+	}
+	return out, nil
+}

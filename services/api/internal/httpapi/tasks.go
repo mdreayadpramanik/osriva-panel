@@ -80,6 +80,15 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleServerMetrics(w http.ResponseWriter, r *http.Request) {
 	minutes := queryInt(r, "minutes")
+	if minutes > 24*60 {
+		rollups, err := s.fleet.MetricRollups(r.Context(), principalFrom(r.Context()), chi.URLParam(r, "id"), time.Duration(minutes)*time.Minute)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"resolution": "hour", "samples": rollups})
+		return
+	}
 	samples, err := s.fleet.Metrics(r.Context(), principalFrom(r.Context()), chi.URLParam(r, "id"), time.Duration(minutes)*time.Minute)
 	if err != nil {
 		s.fail(w, r, err)
@@ -88,7 +97,7 @@ func (s *Server) handleServerMetrics(w http.ResponseWriter, r *http.Request) {
 	if samples == nil {
 		samples = []metrics.Sample{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"samples": samples})
+	writeJSON(w, http.StatusOK, map[string]any{"resolution": "raw", "samples": samples})
 }
 
 // ---- agent listener ----

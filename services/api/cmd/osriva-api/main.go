@@ -25,6 +25,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/httpapi"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
@@ -187,6 +188,8 @@ func cmdServe() error {
 		return err
 	}
 	go fl.RunJanitor(ctx, 30*time.Second)
+	mon := monitor.New(rt.store, rt.id, rt.keys, rt.log, nil)
+	go mon.Run(ctx, 30*time.Second)
 
 	dist, err := agentdist.Load(rt.cfg.AgentDistDir, rt.cfg.PublicURL)
 	if err != nil {
@@ -194,7 +197,7 @@ func cmdServe() error {
 	}
 	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, AgentDist: dist, DB: rt.store, Log: rt.log, Version: version,
+		Identity: rt.id, Fleet: fl, Monitor: mon, AgentDist: dist, DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}
 	newServer := func(addr string, h http.Handler) *http.Server {

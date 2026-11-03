@@ -422,6 +422,63 @@ api DELETE "/servers/$SERVER_ID/backup-policies/$POL" >/dev/null
 wait_task "$(api DELETE "/servers/$SERVER_ID/cms/$WP_ID?delete_data=true" | jq -r .id)" >/dev/null
 sudo docker volume rm osriva-ci-vol >/dev/null
 
+step "Alerts: signed webhook + e-mail (Mailpit), CPU / offline rules, rollups, audit retention"
+login
+HOOKS="$(mktemp)"
+python3 "$(dirname "$0")/webhook-receiver.py" 18099 "$HOOKS" &
+HOOK_PID=$!
+GW="$(sudo docker network inspect osriva_public -f '{{(index .IPAM.Config 0).Gateway}}')"
+sudo docker run -d --name ci-mail --network osriva_public -p 127.0.0.1:18025:8025 axllent/mailpit:latest >/dev/null
+wait_for 60 "Mailpit" curl -fsS -o /dev/null http://127.0.0.1:18025/api/v1/messages || fail "Mailpit"
+
+WH="$(api POST /alerts/channels "$(jq -nc --arg u "http://$GW:18099/hook/T0KEN" '{name:"ci hook",kind:"webhook",enabled:true,config:{url:$u}}')")"
+WH_ID="$(jq -r .channel.id <<<"$WH")"; WH_SECRET="$(jq -r .webhook_secret <<<"$WH")"
+[ "${#WH_SECRET}" = 64 ] || fail "webhook secret not returned"
+EM_ID="$(api POST /alerts/channels '{"name":"ci mail","kind":"email","enabled":true,"config":{"host":"ci-mail","port":1025,"tls":"none","from":"osriva@example.com","to":["ops@example.com"]}}' | jq -r .channel.id)"
+api POST "/alerts/channels/$WH_ID/test" | jq -e '.delivered == 1' >/dev/null || fail "webhook test delivery"
+api POST "/alerts/channels/$EM_ID/test" | jq -e '.delivered == 1' >/dev/null || fail "e-mail test delivery"
+verify_hook() { # verify_hook LINE: the signature must match HMAC-SHA256(secret, timestamp "." body)
+	local ts sig body want
+	ts="$(jq -r '.headers["X-Osriva-Timestamp"]' <<<"$1")"
+	sig="$(jq -r '.headers["X-Osriva-Signature"]' <<<"$1")"
+	want="sha256=$( (printf '%s.' "$ts"; jq -r .body <<<"$1" | base64 -d) | openssl dgst -sha256 -hmac "$WH_SECRET" -r | cut -d' ' -f1)"
+	[ "$sig" = "$want" ]
+}
+verify_hook "$(head -n1 "$HOOKS")" || fail "webhook signature does not verify"
+jq -e 'select(.path == "/hook/T0KEN") | .headers["X-Osriva-Event"] == "alert.test"' "$HOOKS" >/dev/null || fail "test webhook"
+curl -fsS 'http://127.0.0.1:18025/api/v1/search?query=subject:Test' | jq -e '.messages_count >= 1' >/dev/null || fail "test e-mail not received"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE metadata::text LIKE '%T0KEN%' OR metadata::text LIKE '%$WH_SECRET%'")" = 0 ] || fail "webhook secret or path in the audit log"
+
+# CPU above 0.1% for one minute fires on any live machine
+api POST /alerts/rules "$(jq -nc --arg s "$SERVER_ID" --arg w "$WH_ID" --arg e "$EM_ID" '{name:"ci cpu",server_id:$s,metric:"cpu",threshold:0.1,duration_minutes:1,channel_ids:[$w,$e],enabled:true}')" >/dev/null
+cpu_fired() { grep -q '"alert.firing"' "$HOOKS" && curl -fsS 'http://127.0.0.1:18025/api/v1/search?query=subject:FIRING' | jq -e '.messages_count >= 1'; }
+wait_for 150 "CPU alert on webhook and e-mail" cpu_fired || fail "CPU alert not delivered"
+while read -r line; do verify_hook "$line" || fail "a webhook signature did not verify"; done <"$HOOKS"
+
+# offline: stop the agent, expect firing, start it, expect resolved
+api POST /alerts/rules "$(jq -nc --arg s "$SERVER_ID" --arg w "$WH_ID" '{name:"ci offline",server_id:$s,metric:"offline",threshold:1,duration_minutes:1,channel_ids:[$w],enabled:true}')" >/dev/null
+sudo systemctl stop osriva-agent
+offline_fired() { api GET "/alerts/events?limit=50" | jq -e '[.events[] | select(.rule_name == "ci offline" and .state == "firing")] | length == 1'; }
+wait_for 240 "offline alert" offline_fired || fail "offline alert did not fire"
+sudo systemctl start osriva-agent
+offline_resolved() { api GET "/alerts/events?limit=50" | jq -e '[.events[] | select(.rule_name == "ci offline" and .state == "resolved")] | length == 1'; }
+wait_for 180 "offline resolved" offline_resolved || fail "offline alert did not resolve"
+
+# retention and rollups run when the API starts: seed an old audit entry and samples two hours back, then restart it
+sudo pkill -f webhook-receiver.py || true
+pg "INSERT INTO audit_logs (organization_id, action, outcome, created_at) VALUES ('00000000-0000-4000-8000-000000000001', 'ci.ancient', 'success', now() - interval '40 days')" >/dev/null
+pg "INSERT INTO metric_samples (server_id, ts, data) SELECT '$SERVER_ID', t, jsonb_build_object('ts', to_char(t AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), 'cpu_percent', 42) FROM (SELECT date_trunc('hour', now()) - interval '2 hours' + g * interval '5 minutes' AS t FROM generate_series(0, 5) g) s ON CONFLICT DO NOTHING" >/dev/null
+api PUT /settings/audit-retention '{"days":30}' | jq -e '.audit_retention_days == 30' >/dev/null || fail "set audit retention"
+sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml restart api >/dev/null
+wait_for 60 "API back" curl -fsS -o /dev/null "$PANEL/api/v1/meta" || fail "API did not come back"
+login
+pruned() { [ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'ci.ancient'")" = 0 ] && [ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'audit.pruned'")" -ge 1 ]; }
+wait_for 60 "audit retention" pruned || fail "old audit entry not pruned"
+has_rollup() { api GET "/servers/$SERVER_ID/metrics?minutes=10080" | jq -e '.resolution == "hour" and ([.samples[] | select(.cpu_percent == 42 and .samples == 6)] | length == 1)'; }
+wait_for 60 "hourly rollup" has_rollup || fail "rollup not written"
+wait_for 90 "server online again" is_online || fail "agent did not reconnect"
+sudo docker rm -f ci-mail >/dev/null
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

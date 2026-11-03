@@ -921,11 +921,76 @@ paths:
       summary: Remove a schedule; existing backups are kept
       responses:
         "204": { description: Removed }
+  /alerts/channels:
+    get:
+      tags: [alerts]
+      summary: Notification channels (alerts.read; webhook paths and SMTP user names are masked without alerts.write)
+      responses:
+        "200": { description: "`{channels: [{id, name, kind, config, has_secret, enabled}]}`" }
+    post:
+      tags: [alerts]
+      summary: Add a webhook or e-mail channel (alerts.write); a webhook signing secret is returned once
+      responses:
+        "201": { description: "`{channel, webhook_secret?}`" }
+  /alerts/channels/{channelId}:
+    parameters: [{ name: channelId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [alerts]
+      summary: Change a channel (alerts.write); omit `secret` to keep the SMTP password
+      responses:
+        "200": { description: Channel }
+    delete:
+      tags: [alerts]
+      summary: Delete a channel and detach it from rules (alerts.write)
+      responses:
+        "204": { description: Deleted }
+  /alerts/channels/{channelId}/test:
+    parameters: [{ name: channelId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [alerts]
+      summary: Send a test notification (alerts.write)
+      responses:
+        "200": { description: "Event with delivered/failed counts" }
+  /alerts/rules:
+    get:
+      tags: [alerts]
+      summary: Alert rules (alerts.read)
+      responses:
+        "200": { description: "`{rules: [...]}`" }
+    post:
+      tags: [alerts]
+      summary: Add a rule (alerts.write); metric cpu|memory|disk|load|offline|backup
+      responses:
+        "201": { description: Rule }
+  /alerts/rules/{ruleId}:
+    parameters: [{ name: ruleId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [alerts]
+      summary: Change a rule (alerts.write)
+      responses:
+        "200": { description: Rule }
+    delete:
+      tags: [alerts]
+      summary: Delete a rule (alerts.write)
+      responses:
+        "204": { description: Deleted }
+  /alerts/events:
+    get:
+      tags: [alerts]
+      summary: Recent alert events with their delivery result (alerts.read)
+      responses:
+        "200": { description: "`{events: [...]}`" }
+  /settings/audit-retention:
+    put:
+      tags: [settings]
+      summary: Days to keep audit entries, 30-3650 (settings.write + re-auth)
+      responses:
+        "200": { description: Settings }
   /servers/{id}/metrics:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:
       tags: [servers]
-      summary: Live metric samples (servers.read); values a platform cannot provide are omitted
+      summary: Metric samples (servers.read); up to 1440 minutes raw, longer windows (up to 90 days) as hourly rollups with `resolution: hour`
       parameters:
         - { name: minutes, in: query, schema: { type: integer, maximum: 1440, default: 60 } }
       responses:

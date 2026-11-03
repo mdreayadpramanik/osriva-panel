@@ -419,3 +419,32 @@ export type Backup = {
 export type BackupPolicy = { id: string; kind: BackupKind; target: string; interval_hours: number; keep: number; last_run_at: string | null; created_at: string };
 export type BackupVerifyResult = { id: string; ok: boolean; files: number; plain_sha256: string; problem?: string };
 export type BackupRestoreResult = { id: string; files: number; stopped: string[]; database: boolean };
+
+export type ChannelKind = "webhook" | "email";
+export type NotificationChannel = { id: string; name: string; kind: ChannelKind; config: Record<string, unknown>; has_secret: boolean; enabled: boolean; created_at: string };
+export type AlertMetric = "cpu" | "memory" | "disk" | "load" | "offline" | "backup";
+export type AlertRule = {
+  id: string;
+  name: string;
+  server_id: string | null;
+  metric: AlertMetric;
+  threshold: number;
+  duration_minutes: number;
+  channel_ids: string[];
+  enabled: boolean;
+  created_at: string;
+};
+export type AlertEvent = {
+  id: string;
+  rule_name: string;
+  server_name: string;
+  metric: string;
+  state: "firing" | "resolved" | "test";
+  value: number;
+  threshold: number;
+  message: string;
+  delivered: number;
+  failed: number;
+  delivery_error: string;
+  created_at: string;
+};

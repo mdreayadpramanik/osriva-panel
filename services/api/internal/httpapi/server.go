@@ -13,6 +13,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/openapi"
 )
@@ -24,6 +25,7 @@ type Pinger interface {
 type Options struct {
 	Identity       *identity.Service
 	Fleet          *fleet.Service
+	Monitor        *monitor.Service
 	AgentDist      *agentdist.Dist
 	DB             Pinger
 	Log            *slog.Logger
@@ -38,6 +40,7 @@ type Options struct {
 type Server struct {
 	id             *identity.Service
 	fleet          *fleet.Service
+	monitor        *monitor.Service
 	dist           *agentdist.Dist
 	db             Pinger
 	log            *slog.Logger
@@ -50,7 +53,7 @@ type Server struct {
 
 func New(o Options) http.Handler {
 	s := &Server{
-		id: o.Identity, fleet: o.Fleet, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
+		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
 		sessionTTL: o.SessionTTL, trustedProxies: o.TrustedProxies, apiLimiter: o.APILimiter,
 	}
 	if s.log == nil {
@@ -119,6 +122,17 @@ func (s *Server) routes() http.Handler {
 			r.Get("/audit-logs", s.handleListAudit)
 			r.Get("/settings", s.handleGetSettings)
 			r.Put("/settings/panel-mode", s.handleSetPanelMode)
+			r.Put("/settings/audit-retention", s.handleSetAuditRetention)
+			r.Get("/alerts/channels", s.handleListChannels)
+			r.Post("/alerts/channels", s.handleCreateChannel)
+			r.Put("/alerts/channels/{channelId}", s.handleUpdateChannel)
+			r.Delete("/alerts/channels/{channelId}", s.handleDeleteChannel)
+			r.Post("/alerts/channels/{channelId}/test", s.handleTestChannel)
+			r.Get("/alerts/rules", s.handleListRules)
+			r.Post("/alerts/rules", s.handleCreateRule)
+			r.Put("/alerts/rules/{ruleId}", s.handleUpdateRule)
+			r.Delete("/alerts/rules/{ruleId}", s.handleDeleteRule)
+			r.Get("/alerts/events", s.handleListAlertEvents)
 
 			r.Get("/servers", s.handleListServers)
 			r.Post("/servers", s.handleCreateServer)

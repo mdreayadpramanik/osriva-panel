@@ -102,6 +102,64 @@ export default function SettingsPage() {
           </div>
         )}
       </Card>
+      <div className="mt-6">
+        <AuditRetentionCard />
+      </div>
     </>
+  );
+}
+
+function AuditRetentionCard() {
+  const { can, privileged } = useSession();
+  const [days, setDays] = useState<number | null>(null);
+  const [value, setValue] = useState(365);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ audit_retention_days: number }>("/settings")
+      .then((s) => {
+        setDays(s.audit_retention_days);
+        setValue(s.audit_retention_days);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  }, []);
+  async function save() {
+    if (days != null && value < days && !confirm(`Shorten audit retention to ${value} days? Older entries are deleted within the hour.`)) return;
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const s = await privileged(() => api<{ audit_retention_days: number }>("/settings/audit-retention", { method: "PUT", body: { days: value } }));
+      setDays(s.audit_retention_days);
+      setSaved(true);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const writable = can("settings.write");
+  return (
+    <Card title="Audit log retention" description="Entries older than this are deleted automatically (checked every hour). Each cleanup is itself recorded in the audit log.">
+      {error && <Alert>{error}</Alert>}
+      {saved && <Alert tone="success">Retention saved.</Alert>}
+      {days === null ? (
+        !error && <LoadingBlock />
+      ) : (
+        <div className="flex flex-wrap items-end gap-3 text-sm">
+          <label className="flex flex-col gap-1">
+            Keep entries for (days)
+            <input type="number" min={30} max={3650} disabled={!writable} className="h-9 w-32 rounded-lg border border-line bg-surface px-3" value={value} onChange={(e) => setValue(Number(e.target.value))} />
+          </label>
+          {writable && (
+            <Button loading={busy} disabled={value === days} onClick={() => void save()}>
+              Save
+            </Button>
+          )}
+          <span className="text-xs text-muted">30 to 3650 days. Metrics: raw samples 24 h, hourly averages 90 days.</span>
+        </div>
+      )}
+    </Card>
   );
 }

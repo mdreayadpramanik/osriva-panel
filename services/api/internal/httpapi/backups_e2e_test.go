@@ -142,6 +142,7 @@ func TestBackupsKeysAndSchedules(t *testing.T) {
 	if ts, _ := e.store().ListTasks(ctx, id, 100); countType(ts, agenttask.BackupCreate) != 2 {
 		t.Fatalf("backup started before it was due: %d create tasks", countType(ts, agenttask.BackupCreate))
 	}
+	time.Sleep(20 * time.Millisecond) // distinct created_at on coarse clocks (Windows)
 	e.fleet.RunBackupSchedule(ctx, now.Add(25*time.Hour))
 	second := finishCreate(t, ctx, client)
 	e.fleet.RunBackupSchedule(ctx, now.Add(26*time.Hour)) // prune: keep 1
