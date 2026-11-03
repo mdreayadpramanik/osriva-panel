@@ -106,6 +106,14 @@
 - [ ] Database services: create MySQL/MariaDB/PostgreSQL databases and users, per-database dumps
 - [ ] App (Phase 4b) and plain container backups with stop-consistent snapshots
 
+## Phase 8a: Alerts and retention (done)
+
+- [x] Alert rules (cpu, memory, disk, load, offline, backup), signed webhooks, SMTP e-mail (CI run 41609898762)
+- [x] Hourly metric rollups (90 days), audit retention (CI run 41609898762)
+- [ ] Notification queue with retries; silences and maintenance windows (Phase 9 / 8b)
+- [ ] Automation: scheduled actions and remediation (8b)
+- [ ] Slack / Telegram / Matrix adapters (webhooks work with any receiver today)
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters

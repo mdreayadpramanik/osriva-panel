@@ -134,6 +134,17 @@ certificate, stop when revoked. It cannot manage anything yet (Phase 3+).
 | Remote storage (S3, SFTP) | UNSUPPORTED | Phase 7b |
 | Windows, BSD | UNSUPPORTED | Needs Docker on Linux |
 
+## Alerts and notifications (Phase 8a)
+
+"System tests run 41609898762" is the `System tests` workflow at commit `639a2b4` (2026-11-03).
+
+| Feature | Status | Evidence / notes |
+|---------|--------|------------------|
+| Webhook delivery (any HTTP receiver) | SUPPORTED | System tests run 41609898762 (signatures verified) |
+| SMTP without TLS to a local relay | SUPPORTED | System tests run 41609898762 (Mailpit) |
+| SMTP with STARTTLS / TLS and authentication | NOT_TESTED | Go `net/smtp`; no TLS SMTP server in CI |
+| Alerts for Windows agents (CPU, memory, offline) | NOT_TESTED | Same panel-side evaluation; metrics are reported by Windows agents |
+
 ## Runtimes, frameworks, CMS, databases, virtualization
 
 None are integrated yet. Each one is added here as its adapter lands (Phases 4b–11).

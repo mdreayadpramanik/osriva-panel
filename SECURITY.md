@@ -44,6 +44,7 @@ a security contact address and a PGP key.)*
 | Reverse proxy | Caddy container on the host network with all capabilities dropped except NET_BIND_SERVICE, no-new-privileges; admin API only on a Unix socket inside a 0700 root-only directory; Caddyfile rendered only from validated values (RFC 1123 domains, integers, checked e-mail); busy ports refused; new configs validated by Caddy before the old one is replaced; no firewall changes | `agent/internal/tasks/proxy.go`, ADR-0008 |
 | CMS (WordPress) | Official pinned images; MariaDB on a private network without published ports; WordPress on 127.0.0.1; database password generated on the server; admin password shown once and redacted (any `*password*` parameter) from task records and audit; user values reach WP-CLI only as environment variables; read operations skip plugin and theme code; objects not labelled by OSRIVA are never reused or removed; deleting data needs re-auth and a typed confirmation | `agent/internal/tasks/cms.go`, ADR-0009 |
 | Backups | age (X25519) encryption; the agent only receives the recipient, the identity is stored encrypted in the panel, sent only for verify/restore and redacted (any `*_key` parameter) from task records; recovery-key export needs re-auth and is audited; archives verified (file hash, full decrypt and read) before any restore; extraction refuses traversal, absolute paths and symlink tricks; restores need re-auth plus a typed confirmation; control-plane volumes refused; files 0600 in a 0700 directory | `agent/internal/tasks/backup.go`, `fleet/backup.go`, ADR-0010 |
+| Alerts and notifications | Webhooks signed with HMAC-SHA256 (timestamp + body), 256-bit secret shown once, redirects not followed, 10 s timeout; SMTP STARTTLS required when selected, PLAIN auth never on plain connections; channel secrets AES-GCM encrypted; webhook paths kept out of the audit log and masked for readers; CR/LF refused in names and stripped from subjects; separate `alerts.read` / `alerts.write` permissions; audit retention changes need `settings.write` + re-auth and every cleanup is audited | `services/api/internal/monitor`, ADR-0011 |
 | Installer | `plan` changes nothing; every change needs confirmation (or `--yes`); secrets generated locally into a 0600 file; verified database backup before upgrades with automatic rollback; `--purge` requires a typed confirmation; never touches firewall, SSH, disk or network settings | `installer/osriva-install.sh` |
 
 ## Known limitations and risks
@@ -58,7 +59,6 @@ a security contact address and a PGP key.)*
   unreadable, and the affected users then need MFA reset (no admin reset tool yet).
 * **No admin password reset or MFA recovery codes yet.** An owner who loses
   both factors needs `osriva-api admin create` on the host to regain access.
-* **Audit retention is unbounded.** Log growth needs a retention job (Phase 8).
 * The PostgreSQL store passes the shared contract suite in CI only. It has not
   been run on the development machine (no PostgreSQL there).
 * No external security audit has been performed (planned for Phase 14).

@@ -1,10 +1,36 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **7a (encrypted backups) done** · Next: **Phase 7b (remote backup storage, database services) or Phase 8 (alerts, notifications)**
+Last updated: **2026-11-03** · Current phase: **8a (alerts, notifications, retention) done** · Next: **Phase 9 (multi-server fleet, queues) or the pending 5b / 6b / 7b / 8b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, and take encrypted, verified backups with tested restores.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, and alert by signed webhook or e-mail.
+
+## Phase 8a report (alerts, notifications, metrics and audit retention)
+
+Design: [ADR-0011](docs/adr/0011-alerts-notifications.md). Evidence: `System tests` run 41609898762 and `CI` run
+41609898845 (commit `639a2b4`, 2026-11-03, all jobs passed). CI run 41608156420 found a real bug: the PostgreSQL store
+sent a rule without channels as `NULL`; fixed.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Rules: CPU, memory, disk, load (window with coverage check), agent offline, failed backup; transitions only (firing / resolved) | e2e test; Ubuntu CI: CPU rule fired, offline rule fired after stopping the agent and resolved after starting it |
+| Webhooks signed with HMAC-SHA256 over timestamp and body, secret shown once, no redirects | e2e test; Ubuntu CI: every delivery verified with `openssl dgst -hmac` |
+| SMTP e-mail (STARTTLS / TLS / local relay), encrypted password, header-safe subjects | e2e test with a fake SMTP server; Ubuntu CI with Mailpit (test and FIRING mails received) |
+| Secrets: webhook path and secret never in the audit log; masked for readers without `alerts.write` | e2e test; Ubuntu CI checked `audit_logs` |
+| New permissions `alerts.read` / `alerts.write` | e2e test |
+| Hourly rollups (90 days) for 7- and 30-day charts | e2e test; Ubuntu CI: seeded samples rolled up and served with `resolution: hour` |
+| Audit retention 30-3650 days, hourly, records `audit.pruned` | e2e test; Ubuntu CI: a 40-day-old entry removed after a restart |
+| Dashboard Alerts page, metric ranges, retention card | `tsc`; browser on Windows 11 (channel created, one-time secret, failed test shown with its HTTP status) |
+
+### Limitations
+
+* Notifications are sent synchronously by the evaluation loop, with no retries or queue (Phase 9).
+* No silences, maintenance windows, escalation or per-rule repeat reminders.
+* Automation (scheduled actions, remediation) is not done (8b).
+* Hourly rollups do not include per-disk series, only the fullest disk.
 
 ## Phase 7a report (encrypted backups and restores)
 
@@ -308,5 +334,8 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 6a | WordPress install, info, checksum verification, updates, remove | ✅ Done |
 | 6b | Staging, clone, migrate, other CMSes | Pending |
 | 7a | Encrypted, verified backups and restores (volumes, WordPress), schedules | ✅ Done |
-| 7b | Remote backup storage, database services | ⏭ Next (remote storage needs credentials) |
-| 8–14 | See [TASKS.md](TASKS.md) | Not started |
+| 7b | Remote backup storage, database services | Pending (remote storage needs credentials) |
+| 8a | Alerts, webhooks, e-mail, metric rollups, audit retention | ✅ Done |
+| 8b | Automation, silences, notification queue | Pending |
+| 9 | Multi-server fleet, server groups, Redis-backed queues | ⏭ Next |
+| 10–14 | See [TASKS.md](TASKS.md) | Not started |
