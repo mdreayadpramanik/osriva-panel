@@ -54,6 +54,9 @@ func TestDomainXMLAndCloudInit(t *testing.T) {
 	if err := xml.Unmarshal([]byte(x), &d); err != nil {
 		t.Fatalf("domain XML does not parse: %v\n%s", err, x)
 	}
+	if !strings.Contains(x, "<target dev='vdb' bus='virtio'/><readonly/>") || strings.Contains(x, "bus='sata'") {
+		t.Fatal("the cloud-init seed must be a read-only virtio disk (minimal kernels have no SATA driver)")
+	}
 	if d.Type != "kvm" || d.Name != "osriva-"+vmTestID || d.Memory != 1024 || d.VCPU != 2 || d.Meta.VM.ID != vmTestID ||
 		d.Iface.Source.Network != "default" || d.Iface.MAC.Address != VMMAC(vmTestID) {
 		t.Fatalf("domain: %+v", d)

@@ -72,6 +72,10 @@ OSRIVA did not create.
 
   The configuration files are generated as JSON (valid YAML), so no value can inject
   YAML structure.
+
+  The seed is attached as a read-only virtio disk, not as a SATA or IDE CD-ROM: minimal
+  cloud images run a cut-down kernel (Ubuntu `linux-kvm`) without those drivers, and the
+  first system test run found that cloud-init then never saw the seed.
 * **Domains:**
   * Each domain is named `osriva-<vps id>` and carries an OSRIVA metadata element.
   * Actions and deletion refuse any domain without that metadata, so the agent never

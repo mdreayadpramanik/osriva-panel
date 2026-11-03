@@ -257,7 +257,7 @@ func DomainXML(p agenttask.VMCreateParams, disk, seed string) string {
   <on_crash>destroy</on_crash>
   <devices>
     <disk type='file' device='disk'><driver name='qemu' type='qcow2'/><source file='%s'/><target dev='vda' bus='virtio'/></disk>
-    <disk type='file' device='cdrom'><driver name='qemu' type='raw'/><source file='%s'/><target dev='sda' bus='sata'/><readonly/></disk>
+    <disk type='file' device='disk'><driver name='qemu' type='raw'/><source file='%s'/><target dev='vdb' bus='virtio'/><readonly/></disk>
     <interface type='network'><source network='%s'/><mac address='%s'/><model type='virtio'/></interface>
     <serial type='pty'><log file='%s' append='off'/></serial>
     <console type='pty'/>
