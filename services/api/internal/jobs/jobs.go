@@ -259,3 +259,11 @@ func (q *Queue) Status(ctx context.Context) (*Status, error) {
 	}
 	return &Status{Counts: counts, Recent: failed}, nil
 }
+
+// ReleaseAll gives up this process's leases on shutdown, so a restarted or
+// remaining API process takes over the loops without waiting for them to expire.
+func (l *Lessor) ReleaseAll(ctx context.Context) {
+	if err := l.store.ReleaseLeases(ctx, l.holder); err != nil {
+		l.log.Warn("release leases", "err", err)
+	}
+}

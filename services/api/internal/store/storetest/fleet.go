@@ -239,6 +239,16 @@ func testLeases(t *testing.T, s store.Store) {
 	if ok, _ := s.AcquireLease(ctx(), "janitor", "a", now, time.Minute); !ok {
 		t.Fatal("leases are independent")
 	}
+	// "b" holds monitor, "a" holds janitor: releasing "a" frees only janitor.
+	if err := s.ReleaseLeases(ctx(), "a"); err != nil {
+		t.Fatal(err)
+	}
+	if ok, _ := s.AcquireLease(ctx(), "janitor", "c", now.Add(time.Second), time.Minute); !ok {
+		t.Fatal("a released lease is taken at once")
+	}
+	if ok, _ := s.AcquireLease(ctx(), "monitor", "c", now.Add(112*time.Second), time.Minute); ok {
+		t.Fatal("other holders keep their leases")
+	}
 }
 
 func testAlertDelivery(t *testing.T, s store.Store) {

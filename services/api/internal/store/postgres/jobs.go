@@ -129,3 +129,8 @@ func (s *Store) AcquireLease(ctx context.Context, name, holder string, now time.
 	}
 	return got == holder, nil
 }
+
+func (s *Store) ReleaseLeases(ctx context.Context, holder string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM leases WHERE holder = $1`, holder)
+	return err
+}

@@ -293,6 +293,7 @@ func cmdServe() error {
 			runErr = err
 		}
 	}
+	lessor.ReleaseAll(shutdownCtx)
 	return runErr
 }
 

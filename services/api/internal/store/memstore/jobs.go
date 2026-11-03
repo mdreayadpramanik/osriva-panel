@@ -148,3 +148,14 @@ func (s *Store) AcquireLease(_ context.Context, name, holder string, now time.Ti
 	s.leases[name] = lease{holder: holder, expires: now.Add(ttl)}
 	return true, nil
 }
+
+func (s *Store) ReleaseLeases(_ context.Context, holder string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, l := range s.leases {
+		if l.holder == holder {
+			delete(s.leases, name)
+		}
+	}
+	return nil
+}

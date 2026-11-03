@@ -77,8 +77,9 @@ secure, for no gain at this scale.
 * A `leases` row (name, holder, expiry) lets exactly one API process run each periodic
   loop: alert evaluation, rollups and audit retention (`monitor`), and task expiry and
   backup schedules (`janitor`).
-* The holder renews the lease every cycle. Another process takes over within
-  3 × the cycle time when the holder stops.
+* The holder renews the lease every cycle and releases it on a graceful shutdown, so a
+  restarted process continues at once. If the holder crashes, another process takes over
+  within 3 × the cycle time (90 s).
 * Metric ingestion, task polling and the job workers run in every process.
 
 ### Redis for rate limiting (optional)

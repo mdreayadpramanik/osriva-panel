@@ -652,4 +652,7 @@ type JobStore interface {
 	// AcquireLease takes or renews the named lease for holder until now+ttl.
 	// It reports false while another holder's lease is unexpired.
 	AcquireLease(ctx context.Context, name, holder string, now time.Time, ttl time.Duration) (bool, error)
+	// ReleaseLeases drops every lease of holder (graceful shutdown), so another
+	// process or the restarted one takes over at once.
+	ReleaseLeases(ctx context.Context, holder string) error
 }
