@@ -120,6 +120,7 @@ type Store interface {
 	AppStore
 	ProxyStore
 	CMSStore
+	BackupStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -393,4 +394,59 @@ type CMSStore interface {
 	GetCMS(ctx context.Context, id string) (*CMSInstance, error)
 	ListCMS(ctx context.Context, serverID string) ([]CMSInstance, error)
 	DeleteCMS(ctx context.Context, id string) error
+}
+
+// ---- Encrypted backups (Phase 7) ----
+
+type BackupKey struct {
+	ServerID    string
+	Recipient   string
+	IdentityEnc []byte
+}
+
+type BackupPolicy struct {
+	ID            string
+	ServerID      string
+	Kind          string
+	Target        string
+	IntervalHours int
+	Keep          int
+	LastRunAt     *time.Time
+	CreatedBy     *string
+	CreatedAt     time.Time
+}
+
+type Backup struct {
+	ID          string
+	ServerID    string
+	Kind        string
+	Target      string
+	TaskID      *string
+	PolicyID    *string
+	Size        *int64
+	SHA256      *string
+	PlainSHA256 *string
+	Files       *int
+	CreatedBy   *string
+	CreatedAt   time.Time
+}
+
+type BackupStore interface {
+	// EnsureBackupKey stores k unless the server already has a key, and returns the stored key.
+	EnsureBackupKey(ctx context.Context, k *BackupKey) (*BackupKey, error)
+
+	CreateBackup(ctx context.Context, b *Backup) error
+	GetBackup(ctx context.Context, id string) (*Backup, error)
+	// ListBackups returns a server's backups, newest first.
+	ListBackups(ctx context.Context, serverID string, limit int) ([]Backup, error)
+	// SetBackupResult records size and checksums once the agent has reported them.
+	SetBackupResult(ctx context.Context, id string, size int64, sha, plainSHA string, files int) error
+	DeleteBackup(ctx context.Context, id string) error
+
+	CreateBackupPolicy(ctx context.Context, p *BackupPolicy) error
+	GetBackupPolicy(ctx context.Context, id string) (*BackupPolicy, error)
+	// ListBackupPolicies lists one server's policies, or all when serverID is empty.
+	ListBackupPolicies(ctx context.Context, serverID string) ([]BackupPolicy, error)
+	MarkBackupPolicyRun(ctx context.Context, id string, at time.Time) error
+	DeleteBackupPolicy(ctx context.Context, id string) error
 }

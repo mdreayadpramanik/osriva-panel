@@ -46,6 +46,8 @@ func Class(typ string) string {
 		return ClassOperate
 	case cmsTask(typ) && !cmsReadOnly(typ):
 		return ClassOperate
+	case backupTask(typ) && !backupReadOnly(typ):
+		return ClassOperate
 	}
 	return ClassRead
 }
@@ -56,7 +58,7 @@ func NeedsReauth(typ string, params json.RawMessage) bool {
 		return dockerReauth(typ, params)
 	}
 	switch typ {
-	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable, CMSWPInstall, CMSWPUpdate, CMSRemove:
+	case FilesWrite, FilesMkdir, FilesDelete, SSHKeysAdd, SSHKeysRemove, HostnameSet, TimezoneSet, AppDeploy, AppRemove, ProxyApply, ProxyDisable, CMSWPInstall, CMSWPUpdate, CMSRemove, BackupRestore, BackupDelete:
 		return true
 	case ServiceAction:
 		var p ServiceActionParams

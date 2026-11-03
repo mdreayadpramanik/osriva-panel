@@ -18,8 +18,8 @@ func TestRedactedParamsHidesSecrets(t *testing.T) {
 }
 
 func TestRedactedParamsHidesPasswords(t *testing.T) {
-	got, _ := json.Marshal(RedactedParams(json.RawMessage(`{"name":"blog","admin_password":"hunter6","nested":{"db_password":"x"}}`)))
-	if strings.Contains(string(got), "hunter6") || strings.Contains(string(got), `"x"`) || !strings.Contains(string(got), `"name":"blog"`) {
+	got, _ := json.Marshal(RedactedParams(json.RawMessage(`{"name":"blog","admin_password":"hunter6","nested":{"db_password":"x"},"backup_key":"AGE-SECRET-KEY-1SECRET"}`)))
+	if strings.Contains(string(got), "hunter6") || strings.Contains(string(got), `"x"`) || strings.Contains(string(got), "SECRET") || !strings.Contains(string(got), `"name":"blog"`) {
 		t.Fatalf("passwords not redacted: %s", got)
 	}
 }

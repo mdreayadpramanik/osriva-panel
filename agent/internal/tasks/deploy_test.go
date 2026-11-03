@@ -130,6 +130,17 @@ func (f *fakeEngine) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.cts[c.ID] = c
 		w.WriteHeader(201)
 		_ = json.NewEncoder(w).Encode(map[string]string{"Id": c.ID})
+	case p == "/containers/json":
+		var flt struct{ Volume []string }
+		_ = json.Unmarshal([]byte(r.URL.Query().Get("filters")), &flt)
+		out := []map[string]any{}
+		for _, c := range f.cts {
+			if len(flt.Volume) == 1 && !strings.Contains(fmt.Sprint(c.Body["HostConfig"]), flt.Volume[0]) {
+				continue
+			}
+			out = append(out, map[string]any{"Id": c.ID, "State": c.State, "Labels": c.Labels})
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	case len(parts) >= 2 && parts[0] == "containers" && (len(parts) >= 3 || r.Method == http.MethodDelete):
 		c := f.byRef(parts[1])
 		if c == nil {

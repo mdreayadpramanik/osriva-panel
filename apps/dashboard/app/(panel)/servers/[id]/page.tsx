@@ -19,8 +19,9 @@ import { DockerPanel } from "./docker";
 import { AppsPanel } from "./apps";
 import { WebsitesPanel } from "./websites";
 import { CMSPanel } from "./cms";
+import { BackupsPanel } from "./backups";
 
-type Tab = "overview" | "metrics" | "services" | "processes" | "docker" | "apps" | "websites" | "cms" | "logs" | "files" | "system" | "activity";
+type Tab = "overview" | "metrics" | "services" | "processes" | "docker" | "apps" | "websites" | "cms" | "backups" | "logs" | "files" | "system" | "activity";
 const tabs: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "metrics", label: "Live metrics" },
@@ -30,6 +31,7 @@ const tabs: { key: Tab; label: string }[] = [
   { key: "apps", label: "Apps" },
   { key: "websites", label: "Websites" },
   { key: "cms", label: "CMS" },
+  { key: "backups", label: "Backups" },
   { key: "logs", label: "Logs" },
   { key: "files", label: "Files" },
   { key: "system", label: "System" },
@@ -204,6 +206,7 @@ export default function ServerDetailPage() {
       {tab === "apps" && <AppsPanel serverId={s.id} online={s.connection === "online"} />}
       {tab === "websites" && <WebsitesPanel serverId={s.id} online={s.connection === "online"} />}
       {tab === "cms" && <CMSPanel serverId={s.id} online={s.connection === "online"} />}
+      {tab === "backups" && <BackupsPanel serverId={s.id} online={s.connection === "online"} />}
       {tab === "logs" && <LogsPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}
       {tab === "files" && <FilesPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}
       {tab === "system" && <SystemPanel serverId={s.id} online={s.connection === "online"} osFamily={s.os_family} />}

@@ -400,3 +400,22 @@ export type WPInfo = {
   themes: WPComponent[];
 };
 export type WPCommandResult = { name: string; ok: boolean; output: string };
+
+export type BackupKind = "volume" | "wordpress";
+export type Backup = {
+  id: string;
+  kind: BackupKind;
+  target: string;
+  task_id: string | null;
+  policy_id: string | null;
+  size: number | null;
+  sha256: string | null;
+  plain_sha256: string | null;
+  files: number | null;
+  status: TaskStatus;
+  error: string;
+  created_at: string;
+};
+export type BackupPolicy = { id: string; kind: BackupKind; target: string; interval_hours: number; keep: number; last_run_at: string | null; created_at: string };
+export type BackupVerifyResult = { id: string; ok: boolean; files: number; plain_sha256: string; problem?: string };
+export type BackupRestoreResult = { id: string; files: number; stopped: string[]; database: boolean };

@@ -849,6 +849,78 @@ paths:
       summary: Remove the instance (servers.operate + re-auth); `?delete_data=true` also deletes database and files
       responses:
         "202": { description: "The queued `cms.remove` task" }
+  /servers/{id}/backups:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    get:
+      tags: [backups]
+      summary: Backups and schedules of a server (servers.read)
+      responses:
+        "200": { description: "`{backups: [{id, kind, target, status, size, sha256, plain_sha256, files, policy_id, created_at}], policies: [...]}`" }
+    post:
+      tags: [backups]
+      summary: Start an encrypted backup (servers.operate)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, target]
+              properties:
+                kind: { type: string, enum: [volume, wordpress] }
+                target: { type: string, description: "Volume name or WordPress instance name" }
+      responses:
+        "202": { description: Backup }
+  /servers/{id}/backups/recovery-key:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [backups]
+      summary: Export the server's backup decryption key (servers.operate + re-auth, audited)
+      responses:
+        "200": { description: "`{recovery_key}` (age identity)" }
+  /servers/{id}/backups/{backupId}/verify:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: backupId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [backups]
+      summary: Decrypt and read the whole archive on the server (servers.operate)
+      responses:
+        "202": { description: "Task; result `{ok, files, plain_sha256, problem?}`" }
+  /servers/{id}/backups/{backupId}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: backupId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [backups]
+      summary: Replace the live data with the backup after a full verification (servers.operate + re-auth)
+      responses:
+        "202": { description: "Task; result `{files, stopped, database}`" }
+  /servers/{id}/backups/{backupId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: backupId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [backups]
+      summary: Delete the backup file and record (servers.operate + re-auth)
+      responses:
+        "202": { description: Task }
+  /servers/{id}/backup-policies:
+    parameters: [{ $ref: "#/components/parameters/id" }]
+    post:
+      tags: [backups]
+      summary: Schedule backups of a target every N hours, keeping the newest K (servers.operate)
+      responses:
+        "201": { description: Policy }
+  /servers/{id}/backup-policies/{policyId}:
+    parameters:
+      - { $ref: "#/components/parameters/id" }
+      - { name: policyId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [backups]
+      summary: Remove a schedule; existing backups are kept
+      responses:
+        "204": { description: Removed }
   /servers/{id}/metrics:
     parameters: [{ $ref: "#/components/parameters/id" }]
     get:

@@ -125,7 +125,7 @@ func redactMap(md map[string]any) {
 		md["env_names"] = names
 	}
 	for k := range md {
-		if strings.Contains(strings.ToLower(k), "password") {
+		if l := strings.ToLower(k); strings.Contains(l, "password") || strings.HasSuffix(l, "_key") {
 			md[k] = "[redacted]"
 		}
 	}
@@ -326,6 +326,7 @@ func (s *Service) RunJanitor(ctx context.Context, every time.Duration) {
 		if _, err := s.store.PruneMetrics(ctx, now.Add(-metricsRetention)); err != nil {
 			s.log.Warn("prune metrics", "err", err)
 		}
+		s.RunBackupSchedule(ctx, now)
 		select {
 		case <-ctx.Done():
 			return

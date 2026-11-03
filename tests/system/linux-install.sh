@@ -362,6 +362,65 @@ sudo docker volume inspect osriva-wp-ciwp-db >/dev/null || fail "data volume rem
 task cms.remove '{"name":"ciwp","delete_data":true}' | jq -e '.status == "succeeded" and .result.data_deleted == true' >/dev/null || fail "remove data"
 sudo docker volume inspect osriva-wp-ciwp-db >/dev/null 2>&1 && fail "data volume left"
 
+step "Backups: encrypted volume backup, verify, restore, damaged archive refused"
+login
+sudo docker volume create osriva-ci-vol >/dev/null
+VOLDIR="$(sudo docker volume inspect -f '{{.Mountpoint}}' osriva-ci-vol)"
+echo "v1 data" | sudo tee "$VOLDIR/data.txt" >/dev/null
+sudo mkdir "$VOLDIR/sub" && sudo ln -s ../data.txt "$VOLDIR/sub/link"
+sudo chown 1234:1234 "$VOLDIR/data.txt" && sudo chmod 640 "$VOLDIR/data.txt"
+B="$(api POST "/servers/$SERVER_ID/backups" '{"kind":"volume","target":"osriva-ci-vol"}')"
+BID="$(jq -r .id <<<"$B")"
+wait_task "$(jq -r .task_id <<<"$B")" | jq -e '.status == "succeeded" and .result.files >= 3' >/dev/null || fail "volume backup"
+BFILE="/var/lib/osriva-agent/backups/$BID.osb"
+[ "$(sudo stat -c '%a' "$BFILE")" = 600 ] || fail "backup file mode"
+sudo grep -q "v1 data" "$BFILE" && fail "backup is not encrypted"
+api GET "/servers/$SERVER_ID/backups" | jq -e --arg id "$BID" '[.backups[] | select(.id == $id and (.sha256 | length) == 64)] | length == 1' >/dev/null || fail "checksum not recorded"
+wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/verify" | jq -r .id)" | jq -e '.status == "succeeded" and .result.ok == true' >/dev/null || fail "verify"
+
+echo "changed" | sudo tee "$VOLDIR/data.txt" >/dev/null
+sudo touch "$VOLDIR/junk"
+wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/restore" | jq -r .id)" | jq -e '.status == "succeeded"' >/dev/null || fail "restore"
+[ "$(sudo cat "$VOLDIR/data.txt")" = "v1 data" ] || fail "content not restored"
+[ "$(sudo stat -c '%u:%g %a' "$VOLDIR/data.txt")" = "1234:1234 640" ] || fail "owner or mode not restored"
+[ "$(sudo readlink "$VOLDIR/sub/link")" = ../data.txt ] || fail "symlink not restored"
+sudo test -e "$VOLDIR/junk" && fail "files created after the backup survived the restore"
+
+# a damaged archive is detected and the live data is not touched
+sudo dd if=/dev/urandom of="$BFILE" bs=1 seek=200 count=8 conv=notrunc status=none
+echo "live" | sudo tee "$VOLDIR/data.txt" >/dev/null
+wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/verify" | jq -r .id)" | jq -e '.result.ok == false and (.result.problem | contains("damaged"))' >/dev/null || fail "damage not detected"
+wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/restore" | jq -r .id)" | jq -e '.status == "failed" and (.error | contains("nothing was changed"))' >/dev/null || fail "damaged backup restored"
+[ "$(sudo cat "$VOLDIR/data.txt")" = live ] || fail "live data touched by a refused restore"
+api POST "/servers/$SERVER_ID/backups/recovery-key" | jq -e '.recovery_key | startswith("AGE-SECRET-KEY-1")' >/dev/null || fail "recovery key"
+[ "$(pg "SELECT count(*) FROM agent_tasks WHERE params::text LIKE '%AGE-SECRET-KEY%'")" = 0 ] || fail "backup key kept in agent_tasks"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE metadata::text LIKE '%AGE-SECRET-KEY%'")" = 0 ] || fail "backup key in the audit log"
+wait_task "$(api DELETE "/servers/$SERVER_ID/backups/$BID" | jq -r .id)" | jq -e '.status == "succeeded"' >/dev/null || fail "delete backup"
+sudo test -e "$BFILE" && fail "backup file left"
+
+step "Backups: WordPress database + files, restore after changes; scheduled backup"
+WP="$(api POST "/servers/$SERVER_ID/cms/wordpress" '{"name":"cibk","title":"OSRIVA backup blog","admin_user":"ciadmin","admin_email":"ci@example.com","host_port":18097}')"
+WP_ID="$(jq -r .instance.id <<<"$WP")"
+wait_task "$(jq -r .task.id <<<"$WP")" | jq -e '.status == "succeeded"' >/dev/null || fail "WordPress for backups"
+B="$(api POST "/servers/$SERVER_ID/backups" '{"kind":"wordpress","target":"cibk"}')"
+BID="$(jq -r .id <<<"$B")"
+wait_task "$(jq -r .task_id <<<"$B")" | jq -e '.status == "succeeded"' >/dev/null || fail "WordPress backup"
+DBPW="$(sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' osriva-wp-cibk | sed -n 's/^WORDPRESS_DB_PASSWORD=//p')"
+sudo docker exec -e MYSQL_PWD="$DBPW" osriva-wp-cibk-db mariadb -uwordpress wordpress -e "UPDATE wp_options SET option_value='Defaced' WHERE option_name='blogname'"
+sudo docker exec osriva-wp-cibk sh -c 'echo marker > /var/www/html/osriva-marker.txt'
+PAGE="$(curl -fsS http://127.0.0.1:18097/)"; grep -q Defaced <<<"$PAGE" || fail "test change not visible"
+wait_task "$(api POST "/servers/$SERVER_ID/backups/$BID/restore" | jq -r .id)" | jq -e '.status == "succeeded" and .result.database == true and (.result.stopped | length) == 1' >/dev/null || fail "WordPress restore"
+wait_for 60 "WordPress back" curl -fsS -o /dev/null http://127.0.0.1:18097/ || fail "WordPress down after restore"
+PAGE="$(curl -fsS http://127.0.0.1:18097/)"; grep -q "OSRIVA backup blog" <<<"$PAGE" || fail "database not restored"
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18097/osriva-marker.txt)" = 404 ] || fail "files not restored"
+
+POL="$(api POST "/servers/$SERVER_ID/backup-policies" '{"kind":"volume","target":"osriva-ci-vol","interval_hours":24,"keep":2}' | jq -r .id)"
+has_scheduled() { api GET "/servers/$SERVER_ID/backups" | jq -e --arg p "$POL" '[.backups[] | select(.policy_id == $p and .status == "succeeded")] | length == 1'; }
+wait_for 120 "scheduled backup (janitor runs every 30 s)" has_scheduled || fail "scheduled backup did not run"
+api DELETE "/servers/$SERVER_ID/backup-policies/$POL" >/dev/null
+wait_task "$(api DELETE "/servers/$SERVER_ID/cms/$WP_ID?delete_data=true" | jq -r .id)" >/dev/null
+sudo docker volume rm osriva-ci-vol >/dev/null
+
 step "live metrics arrive (CPU needs two readings: first upload after ~30 s)"
 has_metrics() { api GET "/servers/$SERVER_ID/metrics?minutes=10" | jq -e '[.samples[] | select(.cpu_percent != null and .mem_total_bytes > 0 and .load1 != null)] | length > 0'; }
 wait_for 90 "metrics with CPU, memory and load" has_metrics

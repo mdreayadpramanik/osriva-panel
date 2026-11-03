@@ -31,7 +31,8 @@ func Execute(ctx context.Context, typ string, params json.RawMessage) (any, erro
 	if typ == agenttask.DockerImagePull || typ == agenttask.DockerContainerRun {
 		timeout = 4 * time.Minute // image downloads; the control plane allows 6 minutes
 	}
-	if typ == agenttask.AppDeploy || typ == agenttask.ProxyApply || typ == agenttask.CMSWPInstall || typ == agenttask.CMSWPUpdate {
+	if typ == agenttask.AppDeploy || typ == agenttask.ProxyApply || typ == agenttask.CMSWPInstall || typ == agenttask.CMSWPUpdate ||
+		typ == agenttask.BackupCreate || typ == agenttask.BackupVerify || typ == agenttask.BackupRestore {
 		timeout = agenttask.RunTimeout(typ) - time.Minute // report before the control plane gives up
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -47,6 +48,9 @@ func Execute(ctx context.Context, typ string, params json.RawMessage) (any, erro
 	}
 	if strings.HasPrefix(typ, "cms.") {
 		return cmsTaskRun(ctx, typ, params)
+	}
+	if strings.HasPrefix(typ, "backup.") {
+		return backupTaskRun(ctx, typ, params)
 	}
 	switch typ {
 	case agenttask.ServicesList:
