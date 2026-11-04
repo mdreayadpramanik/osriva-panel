@@ -1,0 +1,117 @@
+# Release artifacts with SHA-256 checksums and Sigstore keyless signatures
+# (docs/releasing.md).
+#
+# workflow_dispatch: dry run. It builds, checksums, signs and verifies everything and
+#   keeps the files as a workflow artifact. Nothing is published as a GitHub Release
+#   or container image. Signing still records an entry in Sigstore's public
+#   transparency log.
+# push of a v* tag: the same, then a GitHub pre-release and images on GHCR.
+#   This path has not been run yet.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version label for the dry run
+        required: true
+        default: 0.0.0-dryrun
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release (tags only)
+      id-token: write # Sigstore keyless signing with the workflow's OIDC identity
+      packages: write # push images to GHCR (tags only)
+    env:
+      AGENT_TARGETS: linux/amd64 linux/arm64 linux/arm windows/amd64 windows/arm64 freebsd/amd64 freebsd/arm64 openbsd/amd64 netbsd/amd64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Version and mode
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"; echo "PUBLISH=true" >> "$GITHUB_ENV"
+          else
+            v="${{ inputs.version }}"
+            [[ "$v" =~ ^[0-9A-Za-z.+-]{1,40}$ ]] || { echo "bad version"; exit 1; }
+            echo "VERSION=$v" >> "$GITHUB_ENV"; echo "PUBLISH=false" >> "$GITHUB_ENV"
+          fi
+      - name: Build binaries (reproducible flags, no cgo)
+        run: |
+          set -e
+          mkdir -p dist
+          ld="-s -w -X main.version=${VERSION}"
+          for t in $AGENT_TARGETS; do
+            os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$ld" -o "dist/osriva-agent-${os}-${arch}${ext}" ./agent/cmd/osriva-agent
+          done
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "$ld" -o "dist/osriva-api-linux-${arch}" ./services/api/cmd/osriva-api
+          done
+          for t in linux/amd64 windows/amd64 darwin/arm64; do
+            os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "dist/osriva-plugin-${os}-${arch}${ext}" ./pkg/pluginsdk/cmd/osriva-plugin
+          done
+          cp installer/osriva-install.sh dist/
+          ./dist/osriva-agent-linux-amd64 version | grep -qx "${VERSION}"
+          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - uses: sigstore/cosign-installer@v3.7.0
+        with:
+          cosign-release: v2.4.1
+      - name: Sign the checksum list (Sigstore keyless)
+        run: cosign sign-blob --yes --bundle dist/SHA256SUMS.sigstore.json dist/SHA256SUMS
+      - name: Verify the signature, the identity and every checksum
+        run: |
+          set -e
+          id="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@${GITHUB_REF}"
+          cosign verify-blob --bundle dist/SHA256SUMS.sigstore.json --certificate-identity "$id" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com dist/SHA256SUMS
+          (cd dist && sha256sum -c SHA256SUMS)
+          # A changed checksum list must not verify.
+          cp dist/SHA256SUMS /tmp/sums && echo "0000  injected" >> /tmp/sums
+          if cosign verify-blob --bundle dist/SHA256SUMS.sigstore.json --certificate-identity "$id" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com /tmp/sums; then
+            echo "a tampered checksum list verified"; exit 1
+          fi
+          # A different signer identity must not verify.
+          if cosign verify-blob --bundle dist/SHA256SUMS.sigstore.json --certificate-identity "https://github.com/someone/else/.github/workflows/release.yml@${GITHUB_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com dist/SHA256SUMS; then
+            echo "another identity verified"; exit 1
+          fi
+      - name: Build container images
+        run: |
+          set -e
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          docker build --build-arg VERSION="${VERSION}" -f infrastructure/docker/api.Dockerfile -t "$repo/api:${VERSION}" .
+          docker build -f infrastructure/docker/dashboard.Dockerfile -t "$repo/dashboard:${VERSION}" .
+          echo "IMAGE_REPO=$repo" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osriva-${{ env.VERSION }}
+          path: dist/
+      - name: Publish images and sign them (tags only)
+        if: env.PUBLISH == 'true'
+        run: |
+          set -e
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+          for img in api dashboard; do
+            docker push "$IMAGE_REPO/$img:${VERSION}"
+            digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPO/$img:${VERSION}")"
+            cosign sign --yes "$digest"
+          done
+      - name: Publish the GitHub pre-release (tags only)
+        if: env.PUBLISH == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/* --prerelease --title "OSRIVA Panel ${VERSION}" \
+            --notes "Pre-release. Verify with docs/releasing.md. Development status: DEVELOPMENT_STATUS.md."

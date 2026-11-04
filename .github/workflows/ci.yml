@@ -43,6 +43,14 @@ jobs:
       - name: Test (with race detector and PostgreSQL integration tests)
         run: go test -race -count=1 ./...
       - run: go build -o /dev/null ./services/api/cmd/osriva-api
+      - name: Known vulnerabilities (govulncheck)
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: Performance on PostgreSQL 17 (300 servers)
+        run: OSRIVA_PERF=1 OSRIVA_PERF_OUT="$PWD/perf.json" go test -count=1 -run TestPerformance -v ./services/api/internal/store/postgres/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: performance
+          path: perf.json
       - name: Plugin SDK end to end (keygen, sign, verify, tamper)
         run: |
           d="$(mktemp -d)"; mkdir -p "$d/chat-notifier"
@@ -85,3 +93,38 @@ jobs:
       - uses: actions/checkout@v5
       - run: docker build -f infrastructure/docker/api.Dockerfile .
       - run: docker build -f infrastructure/docker/dashboard.Dockerfile .
+
+  # Compatibility evidence beyond the main Ubuntu runner (docs/COMPATIBILITY_MATRIX.md).
+  arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Agent and shared packages on linux/arm64
+        run: go test -count=1 ./agent/... ./pkg/...
+      - name: Agent inventory on a real arm64 host
+        run: |
+          go run ./agent/cmd/osriva-agent inventory --capabilities | tee inventory.json
+          jq -e '.inventory.os.family == "linux" and .inventory.os.arch == "arm64" and (.inventory.memory.total_bytes > 0) and (.inventory.cpu.logical_cores > 0)' inventory.json
+
+  distros:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: CGO_ENABLED=0 go build -o osriva-agent ./agent/cmd/osriva-agent
+      - name: Inventory and OS detection inside distribution containers
+        run: |
+          set -e
+          for spec in debian:12=debian rockylinux:9=rocky almalinux:9=almalinux alpine:3.20=alpine opensuse/leap:15.6=opensuse-leap fedora:41=fedora; do
+            image="${spec%=*}"; want="${spec#*=}"
+            out="$(docker run --rm -v "$PWD/osriva-agent:/osriva-agent:ro" "$image" /osriva-agent inventory --capabilities)"
+            id="$(jq -r .inventory.os.id <<<"$out")"; name="$(jq -r .inventory.os.name <<<"$out")"
+            echo "$image -> id=$id name=$name"
+            [ "$id" = "$want" ] || { echo "expected $want"; exit 1; }
+            jq -e '.inventory.os.family == "linux" and (.inventory.memory.total_bytes > 0) and (.capabilities | length > 0)' <<<"$out" >/dev/null
+          done
