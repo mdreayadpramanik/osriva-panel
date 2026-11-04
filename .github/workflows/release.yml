@@ -75,7 +75,7 @@ jobs:
           for m in agent/cmd/osriva-agent services/api/cmd/osriva-api pkg/pluginsdk/cmd/osriva-plugin; do
             $gomod app -json -licenses -main "$m" -output "dist/$(basename "$m").cdx.json" .
           done
-          npm ci --omit=dev --ignore-scripts
+          npm ci --ignore-scripts # full tree: npm sbom checks it even when dev packages are omitted from the SBOM
           # The root package has no runtime dependencies of its own; the lock file and
           # node_modules live at the root, so select the dashboard workspace from there.
           npm --version
