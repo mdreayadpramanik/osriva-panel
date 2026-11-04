@@ -682,6 +682,26 @@ login
 ! api GET /server-groups | jq -e --arg id "$AFTER_ID" '[.groups[] | select(.id == $id)] | length > 0' >/dev/null || fail 'group created after the backup survived'
 wait_for 150 "server online after restore (agent CA decrypted with the restored key)" is_online
 
+step "backup retention, an off-host copy (a local directory here) and a daily systemd timer"
+OFFSITE=/tmp/osriva-offsite
+sudo rm -rf "$OFFSITE"
+for i in 1 2 3; do sudo "$INSTALLER" backup --keep 2 --copy-to "$OFFSITE" >/dev/null; done
+count_backups() { sudo find /var/backups/osriva -mindepth 1 -maxdepth 1 -type d | grep -cE '/[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$'; }
+[ "$(count_backups)" -eq 2 ] || fail "retention kept $(count_backups) backups, want 2"
+LATEST="$(sudo readlink -f /var/backups/osriva/latest)"
+sudo cmp "$LATEST/database.sql.gz" "$OFFSITE/$(basename "$LATEST")/database.sql.gz" || fail "off-host copy differs"
+[ "$(sudo find "$OFFSITE" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 3 ] || fail "copies are not kept at the destination"
+! sudo "$INSTALLER" backup --keep 0 >/dev/null 2>&1 || fail 'accepted --keep 0'
+! sudo "$INSTALLER" backup --copy-to '/tmp/x;reboot' >/dev/null 2>&1 || fail 'accepted an unsafe --copy-to'
+sudo "$INSTALLER" schedule-backup --at 03:15 --keep 3 --yes
+systemctl is-enabled --quiet osriva-backup.timer || fail "timer not enabled"
+systemctl list-timers --all osriva-backup.timer | grep -q osriva-backup.timer || fail "timer not listed"
+sudo systemctl start osriva-backup.service # oneshot: returns when the backup is done
+[ "$(sudo readlink -f /var/backups/osriva/latest)" != "$LATEST" ] || fail "the timer's service made no new backup"
+[ "$(count_backups)" -eq 3 ] || fail "the timer's backup did not apply --keep 3"
+sudo "$INSTALLER" unschedule-backup
+[ ! -e /etc/systemd/system/osriva-backup.timer ] && [ ! -e /etc/systemd/system/osriva-backup.service ] || fail "timer not removed"
+
 step "upgrade (same source as a new release) keeps data"
 sudo "$INSTALLER" upgrade --yes
 login

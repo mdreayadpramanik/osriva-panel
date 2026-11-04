@@ -28,17 +28,36 @@ sudo ./installer/osriva-install.sh backup
 * **`latest`:** points to the newest backup.
 * **Before upgrades:** `upgrade` always takes a backup first.
 
-The installer does **not** do the following. They are your job:
+### Retention, off-host copies and a daily schedule
 
-* **Copy backups off the host.** A backup on the same disk does not survive a disk failure.
-  Copy the whole directory with `rsync`, `scp` or your backup system.
-* **Protect the copies like a password.** They contain the secret key and every user's data.
-  Encrypt them at rest wherever they go.
-* **Prune old backups.** There is no retention: each run adds a directory. Delete old
-  ones yourself, for example `find /var/backups/osriva -maxdepth 1 -name '20*' -mtime +30`,
-  and check the list before adding `-exec rm -r {} +`.
-* **Schedule it.** For example, a root cron entry or a systemd timer running `backup`
-  nightly, followed by your off-host copy.
+```sh
+# keep the newest 7, copy the new backup to another machine
+sudo ./installer/osriva-install.sh backup --keep 7 --copy-to backup@vault.example.com:/srv/osriva-backups
+
+# the same every day at 03:15 (systemd timer; missed runs catch up after boot)
+sudo ./installer/osriva-install.sh schedule-backup --at 03:15 --keep 7 --copy-to backup@vault.example.com:/srv/osriva-backups
+sudo ./installer/osriva-install.sh unschedule-backup   # removes the timer, keeps the backups
+```
+
+* **`--keep N`:** keeps the newest N backup directories on this host. It deletes only
+  directories named like a backup (`<timestamp>` or `<timestamp>-<n>`), never the one `latest`
+  points to, and never anything at the destination of `--copy-to`.
+* **`--copy-to`:** runs `rsync`. The value is either a local directory (for example a mounted
+  second disk, checked byte for byte after the copy) or `user@host:/dir` over SSH.
+  * The installer does **not** create SSH keys, install rsync or touch `known_hosts`.
+  * Set up root's key and the host key yourself first. SSH runs in batch mode, so a missing
+    key fails the run instead of hanging.
+  * Old copies at the destination are **not** pruned there; that is the destination's job.
+* **Failures:** a failed scheduled backup shows in `systemctl status osriva-backup.service`
+  and `journalctl -u osriva-backup.service`. OSRIVA does not alert on it yet.
+
+The system test runs three backups with `--keep 2 --copy-to <local dir>`, checks the count
+and that the copy is identical, refuses `--keep 0` and an unsafe destination, then creates
+the timer, starts its service once and removes it again. Copying to a remote host over SSH
+is **NOT_TESTED** in CI.
+
+**Protect the copies like a password.** They contain the secret key and every user's data.
+Encrypt them at rest wherever they go.
 
 Server backups made *by* the panel (Docker volumes, WordPress) are separate. They are
 described in `DEVELOPMENT_STATUS.md` (Phase 7a).

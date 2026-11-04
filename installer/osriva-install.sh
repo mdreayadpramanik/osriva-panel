@@ -30,6 +30,10 @@ ASSUME_YES=0
 INSTALL_DOCKER=0
 PURGE=0
 FROM=""
+KEEP=""
+COPY_TO=""
+AT=""
+LAST_BACKUP=""
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
@@ -42,7 +46,9 @@ Commands:
   upgrade     Back up, deploy --source as a new release, verify; roll back automatically on failure
   repair      Rebuild and recreate the containers of the current release, then verify
   verify      Run health checks
-  backup      Dump the database and configuration to /var/backups/osriva
+  backup      Dump the database and configuration to /var/backups/osriva [--keep N] [--copy-to DEST]
+  schedule-backup    Run backup daily with a systemd timer (--at HH:MM, --keep N, optional --copy-to DEST)
+  unschedule-backup  Remove that timer (existing backups stay)
   rollback    Restore the previous release and the database backup taken before the last upgrade
   restore     Restore a chosen backup (--from DIR) into this installation, e.g. on a new host
   uninstall   Stop and remove the containers and /opt/osriva (data kept unless --purge)
@@ -55,6 +61,10 @@ Options:
   --install-docker       Allow installing Docker from the distribution's packages if it is missing (Ubuntu only)
   --purge                With uninstall: also delete the database, configuration and backups
   --from DIR             With restore: the backup directory (e.g. /var/backups/osriva/<timestamp>)
+  --keep N               With backup: afterwards keep only the newest N backups (1-365)
+  --copy-to DEST         With backup: copy the new backup with rsync to /local/dir or user@host:/dir
+                         (SSH keys are yours to set up; the copy contains the secret key)
+  --at HH:MM             With schedule-backup: daily time (host time zone, default 03:15)
   --yes                  Do not prompt (non-interactive)
 EOF
 }
@@ -68,6 +78,9 @@ while [ $# -gt 0 ]; do
 	--install-docker) INSTALL_DOCKER=1; shift ;;
 	--purge) PURGE=1; shift ;;
 	--from) FROM="${2:?--from needs a value}"; shift 2 ;;
+	--keep) KEEP="${2:?--keep needs a value}"; shift 2 ;;
+	--copy-to) COPY_TO="${2:?--copy-to needs a value}"; shift 2 ;;
+	--at) AT="${2:?--at needs a value}"; shift 2 ;;
 	--yes | -y) ASSUME_YES=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -185,7 +198,7 @@ new_release() {
 	# Copy only what the build needs; never local secrets, node_modules or build output.
 	(cd "$SOURCE" && tar --exclude='node_modules' --exclude='.next' --exclude='.git' --exclude='.env*' \
 		--exclude='bin' --exclude='dist' -cf - go.mod go.sum migrations pkg services agent apps package.json package-lock.json \
-		infrastructure docker-compose.yml .dockerignore) | tar -xf - -C "$dest"
+		infrastructure installer docker-compose.yml .dockerignore) | tar -xf - -C "$dest"
 	git -C "$SOURCE" rev-parse --short HEAD >"$dest/$VERSION_FILE_NAME" 2>/dev/null || echo "$id" >"$dest/$VERSION_FILE_NAME"
 	echo "$dest"
 }
@@ -309,7 +322,113 @@ do_backup() {
 	cp -p "$ENV_FILE" "$dir/osriva.env"
 	readlink -f "$PREFIX/current" >"$dir/release"
 	ln -sfn "$dir" "$BACKUP_DIR/latest"
+	LAST_BACKUP="$dir"
 	ok "database dump verified, configuration copied"
+}
+
+# Backup directory names written by do_backup; nothing else in $BACKUP_DIR is ever pruned.
+BACKUP_NAME_RE='^[0-9]{8}T[0-9]{6}Z(-[0-9]+)?$'
+
+check_backup_options() {
+	if [ -n "$KEEP" ]; then
+		[[ "$KEEP" =~ ^[0-9]+$ ]] && [ "$KEEP" -ge 1 ] && [ "$KEEP" -le 365 ] || die "--keep must be a number from 1 to 365"
+	fi
+	if [ -n "$COPY_TO" ]; then
+		# Restrictive on purpose: the value ends up in a systemd unit and an rsync argument.
+		[[ "$COPY_TO" =~ ^([A-Za-z0-9._-]+@[A-Za-z0-9.-]+:)?/[A-Za-z0-9._/-]+$ ]] ||
+			die "--copy-to must be /absolute/dir or user@host:/absolute/dir (letters, digits, . _ - / only)"
+		command -v rsync >/dev/null || die "--copy-to needs rsync; install it yourself (OSRIVA installs nothing for this)"
+	fi
+}
+
+# prune_backups keeps the newest $KEEP backup directories and never removes the
+# one `latest` points to.
+prune_backups() {
+	local latest d removed=0
+	local -a all
+	latest="$(readlink -f "$BACKUP_DIR/latest" 2>/dev/null || true)"
+	mapfile -t all < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E "$BACKUP_NAME_RE" | sort -r)
+	for d in "${all[@]:$KEEP}"; do
+		[ "$BACKUP_DIR/$d" = "$latest" ] && continue
+		rm -rf -- "${BACKUP_DIR:?}/$d"
+		removed=$((removed + 1))
+	done
+	ok "kept the newest $KEEP backups, removed $removed"
+}
+
+copy_backup() {
+	local name
+	name="$(basename "$LAST_BACKUP")"
+	info "Copying $name to $COPY_TO"
+	if [[ "$COPY_TO" == /* ]]; then
+		install -d -m 0700 "$COPY_TO"
+		rsync -a "$LAST_BACKUP" "$COPY_TO/"
+		cmp -s "$LAST_BACKUP/database.sql.gz" "$COPY_TO/$name/database.sql.gz" || die "the copy in $COPY_TO differs from the backup"
+	else
+		# BatchMode: fail instead of waiting for a password in a timer.
+		rsync -a -e "ssh -o BatchMode=yes" "$LAST_BACKUP" "$COPY_TO/"
+	fi
+	ok "copied (it contains the secret key: protect $COPY_TO accordingly)"
+}
+
+cmd_backup() {
+	[ -L "$PREFIX/current" ] || die "not installed"
+	check_backup_options
+	do_backup
+	[ -z "$COPY_TO" ] || copy_backup
+	[ -z "$KEEP" ] || prune_backups
+}
+
+UNIT_DIR="/etc/systemd/system"
+
+cmd_schedule_backup() {
+	[ -L "$PREFIX/current" ] || die "not installed"
+	command -v systemctl >/dev/null && [ -d /run/systemd/system ] || die "schedule-backup needs systemd"
+	AT="${AT:-03:15}"
+	[[ "$AT" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] || die "--at must be HH:MM (24 hours)"
+	KEEP="${KEEP:-7}"
+	check_backup_options
+	local args="backup --keep $KEEP"
+	[ -z "$COPY_TO" ] || args="$args --copy-to $COPY_TO"
+	info "Backup schedule plan"
+	echo "  - write $UNIT_DIR/osriva-backup.service and osriva-backup.timer"
+	echo "  - every day at $AT (host time zone; missed runs catch up after boot): $PREFIX/current/installer/osriva-install.sh $args"
+	[ -z "$COPY_TO" ] && warn "no --copy-to: the backups stay on this disk and do not survive its failure"
+	confirm "Create and start the timer?" || die "aborted"
+	cat >"$UNIT_DIR/osriva-backup.service" <<EOF
+# Written by osriva-install.sh schedule-backup. Remove with unschedule-backup.
+[Unit]
+Description=OSRIVA Panel backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $PREFIX/current/installer/osriva-install.sh $args
+EOF
+	cat >"$UNIT_DIR/osriva-backup.timer" <<EOF
+# Written by osriva-install.sh schedule-backup. Remove with unschedule-backup.
+[Unit]
+Description=Daily OSRIVA Panel backup
+
+[Timer]
+OnCalendar=*-*-* $AT:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+	systemctl daemon-reload
+	systemctl enable --now osriva-backup.timer >/dev/null
+	ok "scheduled; check with: systemctl list-timers osriva-backup.timer; journalctl -u osriva-backup.service"
+}
+
+cmd_unschedule_backup() {
+	[ -f "$UNIT_DIR/osriva-backup.timer" ] || { ok "no backup schedule"; return 0; }
+	systemctl disable --now osriva-backup.timer >/dev/null 2>&1 || true
+	rm -f "$UNIT_DIR/osriva-backup.timer" "$UNIT_DIR/osriva-backup.service"
+	systemctl daemon-reload
+	ok "backup schedule removed (existing backups are kept)"
 }
 
 restore_db() {
@@ -511,7 +630,9 @@ install) cmd_install ;;
 upgrade) cmd_upgrade ;;
 repair) cmd_repair ;;
 verify) do_verify ;;
-backup) [ -L "$PREFIX/current" ] || die "not installed"; do_backup ;;
+backup) cmd_backup ;;
+schedule-backup) cmd_schedule_backup ;;
+unschedule-backup) cmd_unschedule_backup ;;
 rollback) cmd_rollback ;;
 restore) cmd_restore ;;
 uninstall) cmd_uninstall ;;

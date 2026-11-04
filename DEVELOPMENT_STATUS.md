@@ -24,14 +24,15 @@ licence report, signature verified).
 | Alert evaluation reads each server's samples once per pass, loads every alert state in one query and writes a state only when it is new or flips | contract test for `ListAlertStates`; e2e alert tests; performance (300 servers, 3 rules): first pass 932 → 615 ms, second pass 812 → 105 ms, still 45 of 45 expected alerts |
 | Installer `restore --from DIR`: a chosen backup onto a new installation. It refuses damaged dumps, missing keys and dumps from a newer release (unknown migrations); it takes the backup's secret key over and keeps this host's database password | Ubuntu system test: a different secret key in place, a damaged backup refused, restore, a group created after the backup gone, the enrolled agent back online (agent CA decrypted with the restored key) |
 | **Finding fixed (installer):** two backups within the same second shared one directory, so the safety backup a restore takes first could overwrite the backup being restored (System tests run 41861684109 caught it: the wrong key and data came back). Every backup now gets a new directory | system test: two backups in a row make two directories |
+| Panel backups: `backup --keep N` (prunes only backup-named directories, never `latest`), `--copy-to /dir` or `user@host:/dir` (rsync; strict value check), `schedule-backup --at HH:MM` / `unschedule-backup` (systemd timer, `Persistent=true`). Releases now include the installer, which the timer runs | system test SYSTEM_RUN: three backups with `--keep 2` leave two, the local copy is byte-identical and keeps all three, `--keep 0` and `/tmp/x;reboot` refused, the timer's service makes a backup and applies `--keep 3`, unschedule removes both units. SSH copy NOT_TESTED |
 | Operator guide [docs/operations.md](docs/operations.md): what must never be lost, backups and off-host copies, restore, upgrade, health, host hardening | review |
 
 ### Still missing before "production-ready"
 
 * **Independent audit:** a third-party security audit and penetration test (owner decision; needs an external firm).
 * **Soak test:** weeks on real hosts the owner provides, including bridged networking with public addresses for VPS.
-* **Panel backups:** there is no retention and no off-host copy for the panel's own backups yet; the guide makes them
-  the operator's job.
+* **Panel backups:** retention, off-host copies and a daily timer exist since 15a (installer, below); copying over SSH to a
+  remote host is NOT_TESTED, and a failed scheduled backup does not raise a panel alert yet.
 * **Items needing credentials or servers:** 5b, 7b, 10b and 11b; 6b and 8b are open.
 * **Images:** the GHCR images are still private.
 

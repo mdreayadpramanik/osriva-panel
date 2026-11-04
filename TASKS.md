@@ -196,7 +196,7 @@
 - [x] Operator guide docs/operations.md (backups, off-host copies, restore, upgrade, health, hardening)
 - [ ] Independent audit and penetration test (owner: needs an external firm)
 - [ ] Long-running soak test on real hosts the owner provides
-- [ ] Backup retention and off-host copies built into the panel
+- [x] Panel backups: `backup --keep N --copy-to DEST` and a daily `schedule-backup` systemd timer (installer); remote SSH copy NOT_TESTED
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 
