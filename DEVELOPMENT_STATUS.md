@@ -10,7 +10,7 @@ inside each agent's allowed directories, manage SSH keys, view users, scheduled 
 
 The owner asked to make the panel production-ready. This phase does the parts that need no outside party. The panel
 is **still not production-ready**: the open items below need an independent audit and real hosts. Evidence: `CI` run
-41856202762 and `System tests` run 41856202922 (commit `c3175a7`, all jobs passed); release dry run RELEASE_RUN (SBOMs,
+41866635892 and `System tests` run 41866635754 (commit `a4d3fbb`, all jobs passed; first runs 41856202762 and 41856202922 on `c3175a7`); release dry run 41864754738 (commit `22ca8e0`; SBOMs,
 licence report, signature verified).
 
 ### Implemented and tested
