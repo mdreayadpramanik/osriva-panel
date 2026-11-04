@@ -48,6 +48,7 @@ jobs:
       - name: Build binaries (reproducible flags, no cgo)
         run: |
           set -e
+          go version # must be at or above go.mod (security fixes, see docs/security-audit.md)
           mkdir -p dist
           ld="-s -w -X main.version=${VERSION}"
           for t in $AGENT_TARGETS; do

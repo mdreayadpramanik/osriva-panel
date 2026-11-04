@@ -12,7 +12,7 @@ production use, an external audit and penetration test are still recommended; se
 
 | Check | Result | Where |
 |-------|--------|-------|
-| `govulncheck ./...` (Go vulnerability database) | No vulnerability reachable from OSRIVA code. One module-level advisory: GO-2026-5932, the unmaintained `golang.org/x/crypto/openpgp` package, which OSRIVA never imports. | `CI` job `go`, step "Known vulnerabilities" |
+| `govulncheck ./...` (Go vulnerability database) | **Finding 1 (fixed):** `go.mod` pinned `go 1.26.0`, so CI and release builds used a Go release with reachable standard-library vulnerabilities: GO-2026-6809 (`crypto/x509`, reached through SMTP over TLS) and GO-2026-6612, 6613 and 6617 (`net/http`, reached by the API server and the agent client). The minimum is now `go 1.26.10`, which contains the fixes. A local run with Go 1.27.3 had missed this; CI found it. One module-level advisory remains, GO-2026-5932 (the unmaintained `golang.org/x/crypto/openpgp`), and OSRIVA never imports that package. | `CI` job `go`, step "Known vulnerabilities" |
 | `npm audit --omit=dev` | 0 vulnerabilities in the dashboard's production dependencies | local run; dependencies pinned in `package-lock.json` |
 | Every HTTP route checked for its authentication by walking the router: 140 routes | No gaps: 114 operator routes answer 401 without a session and 403 without the CSRF token; 6 customer routes reject operator sessions; 6 signed routes reject unsigned requests; 14 public routes are on an explicit allowlist | `httpapi/authz_audit_test.go`: a new route without protection fails CI |
 | Every `/api/v1` route documented in OpenAPI | Yes | `httpapi/openapi_contract_test.go` |
