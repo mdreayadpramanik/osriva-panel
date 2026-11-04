@@ -126,6 +126,12 @@ sudo ./installer/osriva-install.sh rollback   # previous release + the backup ta
 * **Migrations:** they are forward-only (ADR-0003), so going back to an older release
   always means restoring the database taken before the upgrade. Data written after the
   upgrade is lost.
+* **Which backup rollback uses:** the one `upgrade` took, kept as
+  `/var/backups/osriva/pre-upgrade`. Later scheduled backups do not change it, and
+  `--keep` never prunes it. Rollback refuses a dump with migrations the previous
+  release does not know.
+* **One run at a time:** installer runs that change something take turns. A scheduled
+  backup that starts during an upgrade waits for it to finish, for up to 15 minutes.
 * **Downloads:** verify release files before using them (docs/releasing.md).
 
 ## Health and logs

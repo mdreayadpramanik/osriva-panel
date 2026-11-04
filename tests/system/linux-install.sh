@@ -713,11 +713,25 @@ sudo "$INSTALLER" upgrade --yes
 login
 wait_for 150 "server online after upgrade" is_online
 
-step "rollback restores the previous release and the backup"
+step "a scheduled backup after the upgrade does not change what rollback restores; runs take turns"
+PRE="$(sudo readlink -f /var/backups/osriva/pre-upgrade)"
+[ -n "$PRE" ] && sudo test -f "$PRE/database.sql.gz" || fail "no pre-upgrade backup recorded"
+POST_ID="$(api POST /server-groups '{"name":"made after the upgrade","description":"rollback must remove it"}' | jq -r .id)"
+# Another installer run holds the lock: the backup waits for it instead of running alongside.
+sudo flock /run/osriva-install.lock sleep 8 &
+sleep 1
+WAIT_OUT="$(sudo "$INSTALLER" backup --keep 1)"
+grep -q "Another osriva-install.sh run is in progress" <<<"$WAIT_OUT" || fail "backup did not wait for the lock"
+wait
+[ "$(sudo readlink -f /var/backups/osriva/latest)" != "$PRE" ] || fail "latest did not move"
+sudo test -f "$PRE/database.sql.gz" || fail "--keep 1 pruned the pre-upgrade backup"
+
+step "rollback restores the previous release and the backup taken before the upgrade"
 sudo "$INSTALLER" rollback --yes
 sudo "$INSTALLER" verify
 login
 wait_for 150 "server online after rollback" is_online
+! api GET /server-groups | jq -e --arg id "$POST_ID" '[.groups[] | select(.id == $id)] | length > 0' >/dev/null || fail 'rollback used a backup taken after the upgrade'
 
 step "repair"
 sudo "$INSTALLER" repair --yes

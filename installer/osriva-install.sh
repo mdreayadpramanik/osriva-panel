@@ -344,12 +344,14 @@ check_backup_options() {
 # prune_backups keeps the newest $KEEP backup directories and never removes the
 # one `latest` points to.
 prune_backups() {
-	local latest d removed=0
+	local latest pre d removed=0
 	local -a all
 	latest="$(readlink -f "$BACKUP_DIR/latest" 2>/dev/null || true)"
+	pre="$(readlink -f "$BACKUP_DIR/pre-upgrade" 2>/dev/null || true)"
 	mapfile -t all < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E "$BACKUP_NAME_RE" | sort -r)
 	for d in "${all[@]:$KEEP}"; do
-		[ "$BACKUP_DIR/$d" = "$latest" ] && continue
+		# never the newest pointer, nor the dump a rollback needs
+		[ "$BACKUP_DIR/$d" = "$latest" ] || [ "$BACKUP_DIR/$d" = "$pre" ] && continue
 		rm -rf -- "${BACKUP_DIR:?}/$d"
 		removed=$((removed + 1))
 	done
@@ -526,6 +528,9 @@ cmd_upgrade() {
 	echo "  - on failure: restore the previous release and the database backup"
 	confirm "Proceed with the upgrade?" || die "aborted, nothing was changed"
 	do_backup
+	# Rollback must restore exactly this dump: `latest` moves with every later
+	# (e.g. scheduled) backup, whose schema belongs to the new release.
+	ln -sfn "$LAST_BACKUP" "$BACKUP_DIR/pre-upgrade"
 	local rel
 	rel="$(new_release)"
 	ln -sfn "$cur" "$PREFIX/previous"
@@ -541,12 +546,28 @@ cmd_upgrade() {
 	die "upgrade failed and was rolled back to $(cat "$PREFIX/current/$VERSION_FILE_NAME")"
 }
 
+# rollback_backup is the backup taken right before the last upgrade
+# (installations upgraded before pre-upgrade existed fall back to latest).
+rollback_backup() {
+	if [ -L "$BACKUP_DIR/pre-upgrade" ]; then readlink -f "$BACKUP_DIR/pre-upgrade"; else readlink -f "$BACKUP_DIR/latest" 2>/dev/null || true; fi
+}
+
+# unknown_migrations prints the migrations a dump has applied that a release
+# does not contain (empty: the release understands the dump's schema).
+unknown_migrations() { # DUMP RELEASE_DIR
+	gzip -dc "$1" | awk '/^COPY public.schema_migrations /{c=1; next} c && /^\\\.$/{c=0} c {print $1}' |
+		while read -r v; do [ -f "$2/migrations/$v.sql" ] || echo "$v"; done
+}
+
 do_rollback_inner() {
 	[ -L "$PREFIX/previous" ] || die "no previous release to roll back to"
-	[ -f "$BACKUP_DIR/latest/database.sql.gz" ] || die "no database backup found in $BACKUP_DIR/latest"
-	restore_db "$BACKUP_DIR/latest/database.sql.gz"
-	local prev
+	local bdir prev newer
+	bdir="$(rollback_backup)"
+	[ -n "$bdir" ] && [ -f "$bdir/database.sql.gz" ] || die "no database backup from before the upgrade found in $BACKUP_DIR"
 	prev="$(readlink -f "$PREFIX/previous")"
+	newer="$(unknown_migrations "$bdir/database.sql.gz" "$prev")"
+	[ -z "$newer" ] || die "$bdir has migrations the previous release does not know ($(echo $newer)); refusing to roll back with it"
+	restore_db "$bdir/database.sql.gz"
 	switch_to "$prev"
 	compose up -d --build
 	wait_ready || die "previous release did not become ready"
@@ -556,7 +577,7 @@ do_rollback_inner() {
 cmd_rollback() {
 	[ -L "$PREFIX/current" ] || die "not installed"
 	info "Rollback plan"
-	echo "  - restore the database from $BACKUP_DIR/latest (data written since that backup is LOST)"
+	echo "  - restore the database from $(rollback_backup), taken before the last upgrade (data written since is LOST)"
 	echo "  - switch to $(readlink -f "$PREFIX/previous" 2>/dev/null || echo '<none>')"
 	confirm "Proceed with the rollback?" || die "aborted"
 	do_rollback_inner
@@ -581,8 +602,7 @@ cmd_restore() {
 	cur_key="$(sed -n 's/^OSRIVA_SECRET_KEY=//p' "$ENV_FILE" | tail -n 1)"
 	# A dump from a newer release has migrations this release does not know; it
 	# would start against a schema it does not understand.
-	newer="$(gzip -dc "$dump" | awk '/^COPY public.schema_migrations /{c=1; next} c && /^\\\.$/{c=0} c {print $1}' |
-		while read -r v; do [ -f "$PREFIX/current/migrations/$v.sql" ] || echo "$v"; done)"
+	newer="$(unknown_migrations "$dump" "$(readlink -f "$PREFIX/current")")"
 	[ -z "$newer" ] || die "the backup comes from a newer release (unknown migrations: $(echo $newer)); upgrade this installation first"
 	info "Restore plan"
 	echo "  - back up the current state first (to $BACKUP_DIR/<timestamp>)"
@@ -641,6 +661,21 @@ cmd_uninstall() {
 	if [ "$PURGE" -eq 1 ]; then rm -rf "$CONF_DIR" "$BACKUP_DIR"; fi
 	ok "uninstalled"
 }
+
+# One changing run at a time: a scheduled backup must not dump the database
+# while an upgrade, rollback or restore is replacing it (and the other way round).
+LOCK_FILE="/run/osriva-install.lock"
+take_lock() {
+	command -v flock >/dev/null || { warn "flock not found: concurrent runs are not prevented"; return 0; }
+	exec 9>"$LOCK_FILE"
+	if ! flock -n 9; then
+		info "Another osriva-install.sh run is in progress; waiting up to 15 minutes"
+		flock -w 900 9 || die "another osriva-install.sh run still holds $LOCK_FILE"
+	fi
+}
+case "$CMD" in
+install | upgrade | repair | backup | schedule-backup | unschedule-backup | rollback | restore | uninstall) take_lock ;;
+esac
 
 case "$CMD" in
 plan) cmd_plan ;;
