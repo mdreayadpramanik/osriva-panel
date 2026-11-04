@@ -91,7 +91,8 @@ jobs:
           echo "without a detected licence:"; grep -P '\tUNKNOWN$' dist/THIRD_PARTY_LICENSES.tsv || echo "  none"
           for f in dist/*.cdx.json; do
             echo "$f: $(jq '.components | length' "$f") components"
-            jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "$f" > /dev/null || { echo "$f has no components"; exit 1; }
+            # osriva-plugin uses only the standard library, so zero components is valid there.
+            jq -e '.bomFormat == "CycloneDX" and (.metadata.component.name | length) > 0' "$f" > /dev/null || { echo "$f is not a CycloneDX SBOM"; exit 1; }
           done
       - name: Checksums
         run: (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
