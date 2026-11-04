@@ -44,6 +44,10 @@ type Config struct {
 
 	// RedisURL (optional) shares rate limits and login lockouts between API instances.
 	RedisURL string
+
+	// PluginDir and PluginTrustedKeys (base64 Ed25519 public keys) enable signed plugins.
+	PluginDir         string
+	PluginTrustedKeys []string
 }
 
 // AgentEnabled reports whether agent enrolment is configured.
@@ -138,6 +142,15 @@ func Load(getenv func(string) string) (*Config, error) {
 	c.AgentPublicURL = strings.TrimRight(get("OSRIVA_AGENT_PUBLIC_URL", ""), "/")
 	c.AgentDistDir = get("OSRIVA_AGENT_DIST_DIR", "")
 	c.RedisURL = get("OSRIVA_REDIS_URL", "")
+	c.PluginDir = get("OSRIVA_PLUGIN_DIR", "")
+	for _, k := range strings.Split(get("OSRIVA_PLUGIN_TRUSTED_KEYS", ""), ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			c.PluginTrustedKeys = append(c.PluginTrustedKeys, k)
+		}
+	}
+	if (c.PluginDir == "") != (len(c.PluginTrustedKeys) == 0) {
+		errs = append(errs, errors.New("OSRIVA_PLUGIN_DIR and OSRIVA_PLUGIN_TRUSTED_KEYS must be set together"))
+	}
 	if u, err := url.Parse(c.RedisURL); c.RedisURL != "" && (err != nil || (u.Scheme != "redis" && u.Scheme != "rediss") || u.Host == "") {
 		errs = append(errs, errors.New("OSRIVA_REDIS_URL: must be a redis:// or rediss:// URL"))
 	}

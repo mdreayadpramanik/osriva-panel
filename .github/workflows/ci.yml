@@ -43,6 +43,19 @@ jobs:
       - name: Test (with race detector and PostgreSQL integration tests)
         run: go test -race -count=1 ./...
       - run: go build -o /dev/null ./services/api/cmd/osriva-api
+      - name: Plugin SDK end to end (keygen, sign, verify, tamper)
+        run: |
+          d="$(mktemp -d)"; mkdir -p "$d/chat-notifier"
+          go build -o "$d/osriva-plugin" ./pkg/pluginsdk/cmd/osriva-plugin
+          go build -o "$d/chat-notifier/chat-notifier" ./pkg/pluginsdk/examples/chat-notifier
+          printf '{"name":"chat-notifier","version":"0.1.0","publisher":"ci","description":"","protocol":1,"kinds":["notifier"],"executables":{"linux/amd64":{"path":"chat-notifier","sha256":"%064d"}}}' 0 > "$d/chat-notifier/plugin.json"
+          pub="$("$d/osriva-plugin" keygen --out "$d/publisher.key" | awk '/public key/ {print $3}')"
+          test "$(stat -c %a "$d/publisher.key")" = 600
+          "$d/osriva-plugin" sign --key "$d/publisher.key" "$d/chat-notifier"
+          "$d/osriva-plugin" verify --trusted "$pub" "$d/chat-notifier"
+          echo '{"protocol":1,"method":"describe"}' | env -i "$d/chat-notifier/chat-notifier" | grep -q '"name":"chat-notifier"'
+          echo tampered >> "$d/chat-notifier/chat-notifier"
+          if "$d/osriva-plugin" verify --trusted "$pub" "$d/chat-notifier"; then echo "a tampered binary verified"; exit 1; fi
       - name: Agent inventory on a real Linux host (Ubuntu runner)
         run: |
           go run ./agent/cmd/osriva-agent inventory --capabilities | tee inventory.json

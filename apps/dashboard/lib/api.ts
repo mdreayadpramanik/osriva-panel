@@ -423,7 +423,7 @@ export type BackupPolicy = { id: string; kind: BackupKind; target: string; inter
 export type BackupVerifyResult = { id: string; ok: boolean; files: number; plain_sha256: string; problem?: string };
 export type BackupRestoreResult = { id: string; files: number; stopped: string[]; database: boolean };
 
-export type ChannelKind = "webhook" | "email";
+export type ChannelKind = "webhook" | "email" | "plugin";
 export type NotificationChannel = { id: string; name: string; kind: ChannelKind; config: Record<string, unknown>; has_secret: boolean; enabled: boolean; created_at: string };
 export type AlertMetric = "cpu" | "memory" | "disk" | "load" | "offline" | "backup";
 export type AlertRule = {
@@ -600,4 +600,19 @@ export type CustomerAccount = {
   created_at: string;
   last_login_at: string | null;
   vps_ids?: string[];
+};
+
+export type PluginInfo = {
+  name: string;
+  version: string;
+  publisher: string;
+  description: string;
+  kinds: string[];
+  key_id: string;
+  sha256: string;
+  valid: boolean;
+  reason?: string;
+  enabled: boolean;
+  approved_sha256?: string;
+  runnable: boolean;
 };

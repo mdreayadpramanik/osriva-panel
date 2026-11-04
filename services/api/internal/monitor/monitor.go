@@ -14,14 +14,17 @@ import (
 	"math"
 	"net/mail"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/mdreayadpramanik/osriva-panel/pkg/metrics"
+	"github.com/mdreayadpramanik/osriva-panel/pkg/pluginsdk"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/auth"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/plugins"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/store"
@@ -40,13 +43,14 @@ const (
 )
 
 type Service struct {
-	store  store.Store
-	id     *identity.Service
-	keys   *secrets.Keyring
-	log    *slog.Logger
-	sender Sender
-	queue  *jobs.Queue
-	lessor *jobs.Lessor
+	store   store.Store
+	id      *identity.Service
+	keys    *secrets.Keyring
+	log     *slog.Logger
+	sender  Sender
+	queue   *jobs.Queue
+	plugins *plugins.Registry
+	lessor  *jobs.Lessor
 }
 
 func New(st store.Store, id *identity.Service, keys *secrets.Keyring, log *slog.Logger, sender Sender) *Service {
@@ -75,6 +79,12 @@ type EmailConfig struct {
 	Username string   `json:"username,omitempty"`
 	From     string   `json:"from"`
 	To       []string `json:"to"`
+}
+
+// PluginConfig sends notifications through an approved notifier plugin (docs/adr/0016-plugins.md).
+type PluginConfig struct {
+	Plugin   string          `json:"plugin"`
+	Settings json.RawMessage `json:"settings,omitempty"`
 }
 
 type ChannelInput struct {
@@ -126,8 +136,17 @@ func validateChannel(kind string, raw json.RawMessage) (json.RawMessage, error) 
 			}
 		}
 		return json.Marshal(c)
+	case "plugin":
+		var c PluginConfig
+		if json.Unmarshal(raw, &c) != nil || !pluginName.MatchString(c.Plugin) {
+			return nil, verr("must be {plugin, settings}")
+		}
+		if !plugins.ValidSettings(c.Settings) {
+			return nil, verr("settings must be JSON of at most 4 KiB")
+		}
+		return json.Marshal(c)
 	}
-	return nil, &identity.ValidationError{Field: "kind", Message: "must be webhook or email"}
+	return nil, &identity.ValidationError{Field: "kind", Message: "must be webhook, email or plugin"}
 }
 
 // CreatedChannel carries the generated webhook secret, shown once.
@@ -153,6 +172,9 @@ func (s *Service) CreateChannel(ctx context.Context, actor *identity.Principal, 
 	}
 	cfg, err := validateChannel(in.Kind, in.Config)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.checkPlugin(in.Kind, cfg); err != nil {
 		return nil, err
 	}
 	c := &store.NotificationChannel{ID: auth.NewID(), OrganizationID: actor.User.OrganizationID, Name: name, Kind: in.Kind,
@@ -205,11 +227,14 @@ func (s *Service) UpdateChannel(ctx context.Context, actor *identity.Principal, 
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkPlugin(c.Kind, cfg); err != nil {
+		return nil, err
+	}
 	if name := strings.TrimSpace(in.Name); name != "" && len(name) <= 100 {
 		c.Name = name
 	}
 	c.Config, c.Enabled = cfg, in.Enabled
-	if c.Kind == "email" && in.Secret != nil {
+	if (c.Kind == "email" || c.Kind == "plugin") && in.Secret != nil {
 		c.SecretEnc = nil
 		if *in.Secret != "" {
 			if c.SecretEnc, err = s.keys.Encrypt([]byte(*in.Secret), channelAAD(c.ID)); err != nil {
@@ -640,7 +665,7 @@ func (h notifyHandler) Run(ctx context.Context, j jobs.Job) error {
 	}
 	sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if err := s.sender.Send(sctx, c, secret, ev); err != nil {
+	if err := s.send(sctx, c, secret, ev); err != nil {
 		return fmt.Errorf("%s: %w", c.Name, err)
 	}
 	if err := s.store.RecordAlertDelivery(ctx, ev.ID, true, ""); err != nil {
@@ -683,7 +708,7 @@ func (s *Service) deliver(ctx context.Context, ev *store.AlertEvent, channels []
 			secret = string(plain)
 		}
 		sctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		err := s.sender.Send(sctx, c, secret, ev)
+		err := s.send(sctx, c, secret, ev)
 		cancel()
 		if err != nil {
 			failed++
@@ -714,6 +739,10 @@ func channelTarget(c *store.NotificationChannel) string {
 		var e EmailConfig
 		_ = json.Unmarshal(c.Config, &e)
 		return fmt.Sprintf("smtp %s:%d, %d recipient(s)", e.Host, e.Port, len(e.To))
+	case "plugin":
+		var p PluginConfig
+		_ = json.Unmarshal(c.Config, &p)
+		return "plugin " + p.Plugin // settings may hold tokens
 	}
 	return ""
 }
@@ -733,6 +762,62 @@ func MaskedConfig(c *store.NotificationChannel) json.RawMessage {
 		}
 		out, _ := json.Marshal(e)
 		return out
+	case "plugin":
+		var p PluginConfig
+		_ = json.Unmarshal(c.Config, &p)
+		out, _ := json.Marshal(PluginConfig{Plugin: p.Plugin})
+		return out
 	}
 	return json.RawMessage("{}")
+}
+
+// ---- plugin channels ----
+
+var pluginName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+// UsePlugins enables notification channels of kind plugin.
+func (s *Service) UsePlugins(r *plugins.Registry) { s.plugins = r }
+
+func (s *Service) checkPlugin(kind string, cfg json.RawMessage) error {
+	if kind != "plugin" {
+		return nil
+	}
+	var c PluginConfig
+	_ = json.Unmarshal(cfg, &c)
+	if !s.plugins.Enabled() {
+		return &identity.PolicyError{Message: plugins.ErrDisabled.Error()}
+	}
+	if !s.plugins.HasNotifier(c.Plugin) {
+		return &identity.ValidationError{Field: "config", Message: "plugin " + c.Plugin + " is not an installed, valid notifier"}
+	}
+	return nil
+}
+
+// send delivers one event; plugin channels run through the plugin registry.
+func (s *Service) send(ctx context.Context, c *store.NotificationChannel, secret string, ev *store.AlertEvent) error {
+	if c.Kind != "plugin" {
+		return s.sender.Send(ctx, c, secret, ev)
+	}
+	var pc PluginConfig
+	if err := json.Unmarshal(c.Config, &pc); err != nil {
+		return jobs.Permanent(err)
+	}
+	if s.plugins == nil {
+		return jobs.Permanent(plugins.ErrDisabled)
+	}
+	err := s.plugins.Notify(ctx, pc.Plugin, pc.Settings, secret, pluginEvent(ev))
+	var ce *plugins.CallError
+	if errors.As(err, &ce) && ce.Permanent {
+		return jobs.Permanent(err)
+	}
+	return err
+}
+
+func pluginEvent(ev *store.AlertEvent) pluginsdk.Event {
+	p := pluginsdk.Event{Event: "alert." + ev.State, ID: ev.ID, Rule: ev.RuleName, Server: ev.ServerName, Metric: ev.Metric,
+		Value: ev.Value, Threshold: ev.Threshold, Message: Describe(ev), At: ev.CreatedAt.UTC().Format(time.RFC3339)}
+	if ev.ServerID != nil {
+		p.ServerID = *ev.ServerID
+	}
+	return p
 }

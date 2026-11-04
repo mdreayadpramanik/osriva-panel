@@ -30,6 +30,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/plugins"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provider"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provisioning"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
@@ -240,7 +241,15 @@ func cmdServe() error {
 	billing.UseQueue(queue)
 	billing.UseLessor(lessor)
 	go billing.Run(ctx, 15*time.Second)
+	reg, err := plugins.New(rt.cfg.PluginDir, rt.cfg.PluginTrustedKeys, rt.store, rt.id, rt.log)
+	if err != nil {
+		return err
+	}
+	if reg.Enabled() {
+		rt.log.Info("plugins enabled", "dir", rt.cfg.PluginDir, "trusted_keys", len(rt.cfg.PluginTrustedKeys))
+	}
 	mon := monitor.New(rt.store, rt.id, rt.keys, rt.log, nil)
+	mon.UsePlugins(reg)
 	mon.UseQueue(queue)
 	mon.UseLessor(lessor)
 	go mon.Run(ctx, 30*time.Second)
@@ -252,7 +261,7 @@ func cmdServe() error {
 	}
 	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, Provisioning: billing, Customers: customers, AgentDist: dist,
+		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, Provisioning: billing, Customers: customers, Plugins: reg, AgentDist: dist,
 		APILimiter: rt.limiter("api", 20, 60), DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}

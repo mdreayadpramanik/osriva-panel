@@ -39,6 +39,7 @@ tags:
   - name: provisioning
   - name: customers
   - name: customer-panel
+  - name: plugins
 
 components:
   securitySchemes:
@@ -949,7 +950,7 @@ paths:
         "200": { description: "`{channels: [{id, name, kind, config, has_secret, enabled}]}`" }
     post:
       tags: [alerts]
-      summary: Add a webhook or e-mail channel (alerts.write); a webhook signing secret is returned once
+      summary: "Add a webhook, e-mail or plugin channel (alerts.write); a webhook signing secret is returned once. Plugin channels: config {plugin, settings}, optional secret"
       responses:
         "201": { description: "`{channel, webhook_secret?}`" }
   /alerts/channels/{channelId}:
@@ -1437,3 +1438,23 @@ paths:
       summary: "{action: start | shutdown | reboot}; refused while the billing service is suspended"
       responses:
         "202": { description: VPS with the pending operation }
+  /plugins:
+    get:
+      tags: [plugins]
+      summary: Signed out-of-process plugins found in OSRIVA_PLUGIN_DIR, with validity and approval (settings.read)
+      responses:
+        "200": { description: "`{enabled, plugins: [{name, version, publisher, kinds, key_id, sha256, valid, reason, enabled, approved_sha256, runnable}]}`" }
+  /plugins/rescan:
+    post:
+      tags: [plugins]
+      summary: Re-read and verify the plugin directory (settings.write)
+      responses:
+        "204": { description: Rescanned }
+  /plugins/{name}:
+    parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+    put:
+      tags: [plugins]
+      summary: "Approve or disable a plugin (settings.write + re-auth): {enabled}; approval pins the binary's SHA-256"
+      responses:
+        "200": { description: Plugin }
+        "409": { description: The plugin is invalid }

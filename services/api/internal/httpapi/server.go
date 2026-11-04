@@ -16,6 +16,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/jobs"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/plugins"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provider"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provisioning"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
@@ -34,6 +35,7 @@ type Options struct {
 	Provider       *provider.Service
 	Provisioning   *provisioning.Service
 	Customers      *customer.Service
+	Plugins        *plugins.Registry
 	AgentDist      *agentdist.Dist
 	DB             Pinger
 	Log            *slog.Logger
@@ -53,6 +55,7 @@ type Server struct {
 	provider       *provider.Service
 	provisioning   *provisioning.Service
 	customers      *customer.Service
+	plugins        *plugins.Registry
 	clientLimiter  *ratelimit.KeyedLimiter
 	dist           *agentdist.Dist
 	db             Pinger
@@ -66,7 +69,7 @@ type Server struct {
 
 func New(o Options) http.Handler {
 	s := &Server{
-		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, jobs: o.Jobs, provider: o.Provider, provisioning: o.Provisioning, customers: o.Customers, clientLimiter: ratelimit.NewKeyed(10, 50), dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
+		id: o.Identity, fleet: o.Fleet, monitor: o.Monitor, jobs: o.Jobs, provider: o.Provider, provisioning: o.Provisioning, customers: o.Customers, plugins: o.Plugins, clientLimiter: ratelimit.NewKeyed(10, 50), dist: o.AgentDist, db: o.DB, log: o.Log, version: o.Version, cookieSecure: o.CookieSecure,
 		sessionTTL: o.SessionTTL, trustedProxies: o.TrustedProxies, apiLimiter: o.APILimiter,
 	}
 	if s.log == nil {
@@ -163,6 +166,7 @@ func (s *Server) routes() http.Handler {
 			s.providerRoutes(r)
 			s.provisioningAdminRoutes(r)
 			s.customerAdminRoutes(r)
+			s.pluginRoutes(r)
 			r.Get("/servers", s.handleListServers)
 			r.Post("/servers", s.handleCreateServer)
 			r.Get("/servers/agent-endpoint", s.handleAgentEndpointInfo)

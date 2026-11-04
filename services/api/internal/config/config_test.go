@@ -27,16 +27,17 @@ func TestLoadProductionDefaults(t *testing.T) {
 
 func TestLoadErrors(t *testing.T) {
 	cases := map[string]map[string]string{
-		"missing secret":       {"OSRIVA_DATABASE_URL": "x"},
-		"short secret":         {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": base64.StdEncoding.EncodeToString(make([]byte, 8))},
-		"missing db":           {"OSRIVA_SECRET_KEY": validKey},
-		"insecure cookie prod": {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_COOKIE_SECURE": "false"},
-		"memory store prod":    {"OSRIVA_SECRET_KEY": validKey, "OSRIVA_DEV_MEMORY_STORE": "true"},
-		"bad duration":         {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_SESSION_TTL": "forever"},
-		"idle exceeds ttl":     {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_SESSION_TTL": "1h", "OSRIVA_SESSION_IDLE_TIMEOUT": "2h"},
-		"bad proxy":            {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_TRUSTED_PROXIES": "not-an-ip"},
-		"bad env":              {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_ENV": "staging"},
-		"bad redis url":        {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_REDIS_URL": "http://cache:6379"},
+		"missing secret":          {"OSRIVA_DATABASE_URL": "x"},
+		"short secret":            {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": base64.StdEncoding.EncodeToString(make([]byte, 8))},
+		"missing db":              {"OSRIVA_SECRET_KEY": validKey},
+		"insecure cookie prod":    {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_COOKIE_SECURE": "false"},
+		"memory store prod":       {"OSRIVA_SECRET_KEY": validKey, "OSRIVA_DEV_MEMORY_STORE": "true"},
+		"bad duration":            {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_SESSION_TTL": "forever"},
+		"idle exceeds ttl":        {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_SESSION_TTL": "1h", "OSRIVA_SESSION_IDLE_TIMEOUT": "2h"},
+		"bad proxy":               {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_TRUSTED_PROXIES": "not-an-ip"},
+		"bad env":                 {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_ENV": "staging"},
+		"bad redis url":           {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_REDIS_URL": "http://cache:6379"},
+		"plugin dir without keys": {"OSRIVA_DATABASE_URL": "x", "OSRIVA_SECRET_KEY": validKey, "OSRIVA_PLUGIN_DIR": "/opt/osriva/plugins"},
 	}
 	for name, m := range cases {
 		if _, err := Load(env(m)); err == nil {

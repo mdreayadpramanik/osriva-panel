@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type AlertEvent, type AlertMetric, type AlertRule, type ChannelKind, type NotificationChannel, type Server, type ServerGroup } from "@/lib/api";
+import { api, errorMessage, type AlertEvent, type AlertMetric, type AlertRule, type ChannelKind, type NotificationChannel, type PluginInfo, type Server, type ServerGroup } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, EmptyState, LoadingBlock, Modal, PageHeader, Table, Td, Th } from "@/components/ui";
@@ -183,7 +183,7 @@ export default function AlertsPage() {
                         <p className="text-[11px] text-muted">{c.kind}{!c.enabled && " · disabled"}</p>
                       </Td>
                       <Td className="font-mono text-[11px]">
-                        {c.kind === "webhook" ? String(c.config.url ?? "") : `${c.config.host}:${c.config.port} (${c.config.tls}) → ${(c.config.to as string[] | undefined)?.join(", ")}`}
+                        {c.kind === "webhook" ? String(c.config.url ?? "") : c.kind === "plugin" ? `plugin ${String(c.config.plugin ?? "")}` : `${c.config.host}:${c.config.port} (${c.config.tls}) → ${(c.config.to as string[] | undefined)?.join(", ")}`}
                       </Td>
                       {writable && (
                         <Td className="text-right">
@@ -318,14 +318,37 @@ function ChannelForm({ onClose, onSaved }: { onClose: () => void; onSaved: (webh
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [mail, setMail] = useState({ host: "", port: 587, tls: "starttls", username: "", password: "", from: "", to: "" });
+  const [plug, setPlug] = useState({ plugin: "", settings: "{}", secret: "" });
+  const [notifiers, setNotifiers] = useState<PluginInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<{ plugins: PluginInfo[] }>("/plugins")
+      .then((r) => {
+        const usable = r.plugins.filter((p) => p.runnable && p.kinds.includes("notifier"));
+        setNotifiers(usable);
+        setPlug((x) => ({ ...x, plugin: x.plugin || usable[0]?.name || "" }));
+      })
+      .catch(() => setNotifiers([]));
+  }, []);
   async function submit() {
     setBusy(true);
     setError(null);
+    let settings: unknown;
+    if (kind === "plugin") {
+      try {
+        settings = JSON.parse(plug.settings || "{}");
+      } catch {
+        setError("Plugin settings must be JSON.");
+        setBusy(false);
+        return;
+      }
+    }
     const body =
       kind === "webhook"
         ? { name, kind, enabled: true, config: { url } }
+        : kind === "plugin"
+        ? { name, kind, enabled: true, config: { plugin: plug.plugin, settings }, secret: plug.secret || null }
         : {
             name,
             kind,
@@ -351,10 +374,26 @@ function ChannelForm({ onClose, onSaved }: { onClose: () => void; onSaved: (webh
           <select className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as ChannelKind)}>
             <option value="webhook">Webhook (signed JSON POST)</option>
             <option value="email">E-mail (SMTP)</option>
+            <option value="plugin">Plugin (approved notifier)</option>
           </select>
         ))}
         {kind === "webhook" ? (
           field("URL", <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.example.com/osriva" />)
+        ) : kind === "plugin" ? (
+          notifiers.length === 0 ? (
+            <Alert tone="warning">No approved notifier plugin. Install a signed plugin and approve it under Settings → Plugins.</Alert>
+          ) : (
+            <>
+              {field("Plugin", (
+                <select className={inputClass} value={plug.plugin} onChange={(e) => setPlug({ ...plug, plugin: e.target.value })}>
+                  {notifiers.map((p) => <option key={p.name} value={p.name}>{p.name} {p.version} ({p.publisher || "unknown publisher"})</option>)}
+                </select>
+              ))}
+              {field("Settings (JSON, plugin-specific)", <textarea className="min-h-20 rounded-lg border border-line bg-surface p-2 font-mono text-xs" value={plug.settings} onChange={(e) => setPlug({ ...plug, settings: e.target.value })} />)}
+              {field("Secret (optional, e.g. a webhook URL with a token)", <input type="password" autoComplete="off" className={inputClass} value={plug.secret} onChange={(e) => setPlug({ ...plug, secret: e.target.value })} />)}
+              <p className="text-xs text-muted">The secret is stored encrypted and reaches the plugin only on its standard input.</p>
+            </>
+          )
         ) : (
           <>
             <div className="flex gap-3">

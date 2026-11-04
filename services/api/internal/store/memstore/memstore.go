@@ -27,43 +27,44 @@ type Store struct {
 	settings    map[string]json.RawMessage
 	nextAudit   int64
 
-	caCert      string
-	caKey       []byte
-	servers     map[string]*store.Server
-	certs       map[string]*store.AgentCertificate // by serial
-	inventory   map[string]*store.ServerInventory  // by server ID
-	tasks       map[string]*store.Task
-	metrics     map[string][]store.MetricSample // by server ID, sorted by TS
-	apps        map[string]*store.App
-	deployments map[string]*store.Deployment
-	proxies     map[string]*store.ProxySettings // by server ID
-	sites       map[string]*store.Site
-	cms         map[string]*store.CMSInstance
-	backupKeys  map[string]*store.BackupKey
-	backups     map[string]*store.Backup
-	policies    map[string]*store.BackupPolicy
-	channels    map[string]*store.NotificationChannel
-	rules       map[string]*store.AlertRule
-	alertStates map[[2]string]*store.AlertState
-	alertEvents []*store.AlertEvent
-	rollups     map[string][]store.MetricRollup
-	groups      map[string]*store.ServerGroup
-	batches     map[string]*store.TaskBatch
-	jobs        map[string]*store.Job
-	leases      map[string]lease
-	dcs         map[string]*store.Datacenter
-	racks       map[string]*store.Rack
-	nodes       map[string]*store.Node
-	pools       map[string]*store.IPPool
-	templates   map[string]*store.VMTemplate
-	vps         map[string]*store.VPS
-	clients     map[string]*store.APIClient
-	nonces      map[[2]string]time.Time
-	idem        map[[2]string]*store.IdempotencyRecord
-	plans       map[string]*store.ServicePlan
-	services    map[string]*store.ProvisionedService
-	customers   map[string]*custRecord
-	custSess    map[string]*store.CustomerSession
+	caCert          string
+	caKey           []byte
+	servers         map[string]*store.Server
+	certs           map[string]*store.AgentCertificate // by serial
+	inventory       map[string]*store.ServerInventory  // by server ID
+	tasks           map[string]*store.Task
+	metrics         map[string][]store.MetricSample // by server ID, sorted by TS
+	apps            map[string]*store.App
+	deployments     map[string]*store.Deployment
+	proxies         map[string]*store.ProxySettings // by server ID
+	sites           map[string]*store.Site
+	cms             map[string]*store.CMSInstance
+	backupKeys      map[string]*store.BackupKey
+	backups         map[string]*store.Backup
+	policies        map[string]*store.BackupPolicy
+	channels        map[string]*store.NotificationChannel
+	rules           map[string]*store.AlertRule
+	alertStates     map[[2]string]*store.AlertState
+	alertEvents     []*store.AlertEvent
+	rollups         map[string][]store.MetricRollup
+	groups          map[string]*store.ServerGroup
+	batches         map[string]*store.TaskBatch
+	jobs            map[string]*store.Job
+	leases          map[string]lease
+	dcs             map[string]*store.Datacenter
+	racks           map[string]*store.Rack
+	nodes           map[string]*store.Node
+	pools           map[string]*store.IPPool
+	templates       map[string]*store.VMTemplate
+	vps             map[string]*store.VPS
+	clients         map[string]*store.APIClient
+	nonces          map[[2]string]time.Time
+	idem            map[[2]string]*store.IdempotencyRecord
+	plans           map[string]*store.ServicePlan
+	services        map[string]*store.ProvisionedService
+	customers       map[string]*custRecord
+	custSess        map[string]*store.CustomerSession
+	pluginApprovals map[string]*store.PluginApproval
 }
 
 var _ store.Store = (*Store)(nil)
@@ -87,6 +88,7 @@ func New() *Store {
 		clients: map[string]*store.APIClient{}, nonces: map[[2]string]time.Time{}, idem: map[[2]string]*store.IdempotencyRecord{},
 		plans: map[string]*store.ServicePlan{}, services: map[string]*store.ProvisionedService{},
 		customers: map[string]*custRecord{}, custSess: map[string]*store.CustomerSession{},
+		pluginApprovals: map[string]*store.PluginApproval{},
 	}
 }
 

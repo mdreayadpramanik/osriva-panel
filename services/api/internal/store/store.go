@@ -127,6 +127,7 @@ type Store interface {
 	ProviderStore
 	ProvisioningStore
 	CustomerStore
+	PluginStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -934,4 +935,21 @@ type CustomerStore interface {
 	ListCustomerVPS(ctx context.Context, customerID string) ([]VPS, error)
 	// GetCustomerVPS returns the VPS only when it belongs to the customer (ErrNotFound otherwise).
 	GetCustomerVPS(ctx context.Context, customerID, vpsID string) (*VPS, error)
+}
+
+// ---- Plugins (Phase 13) ----
+
+// PluginApproval pins the binary an operator approved.
+type PluginApproval struct {
+	Name           string
+	Enabled        bool
+	ApprovedSHA256 string
+	ApprovedBy     *string
+	ApprovedAt     time.Time
+}
+
+type PluginStore interface {
+	ListPluginApprovals(ctx context.Context) ([]PluginApproval, error)
+	GetPluginApproval(ctx context.Context, name string) (*PluginApproval, error)
+	SetPluginApproval(ctx context.Context, a *PluginApproval) error
 }

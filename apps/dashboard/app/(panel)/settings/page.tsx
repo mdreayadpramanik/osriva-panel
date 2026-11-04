@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, errorMessage, type APIClient, type JobQueueStatus } from "@/lib/api";
+import { api, errorMessage, type APIClient, type JobQueueStatus, type PluginInfo } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, LoadingBlock, PageHeader, Table, Td, Th, cx } from "@/components/ui";
@@ -111,6 +111,9 @@ export default function SettingsPage() {
       </div>
       <div className="mt-6">
         <APIClientsCard />
+      </div>
+      <div className="mt-6">
+        <PluginsCard />
       </div>
     </>
   );
@@ -341,6 +344,76 @@ function APIClientsCard() {
               <Button loading={busy} disabled={!form.name.trim()} onClick={() => void create()}>Create client</Button>
             </div>
           )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PluginsCard() {
+  const { can, privileged } = useSession();
+  const [data, setData] = useState<{ enabled: boolean; plugins: PluginInfo[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = () =>
+    api<{ enabled: boolean; plugins: PluginInfo[] }>("/plugins")
+      .then((r) => {
+        setData(r);
+        setError(null);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  useEffect(() => void load(), []);
+  const writable = can("settings.write");
+  async function run(fn: () => Promise<unknown>) {
+    setError(null);
+    try {
+      await fn();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    await load();
+  }
+  return (
+    <Card
+      title="Plugins"
+      description="Out-of-process plugins signed with a trusted publisher key. Each call runs the plugin as a separate process without the panel's environment. Approving pins the binary; a changed binary stops until it is approved again."
+    >
+      {error && <Alert>{error}</Alert>}
+      {!data ? (
+        !error && <LoadingBlock />
+      ) : !data.enabled ? (
+        <p className="text-sm text-muted">Plugins are off. Set OSRIVA_PLUGIN_DIR and OSRIVA_PLUGIN_TRUSTED_KEYS (base64 Ed25519 public keys) and restart the API.</p>
+      ) : (
+        <div className="flex flex-col gap-3 text-sm">
+          {data.plugins.length === 0 ? <p className="text-muted">No plugins in the plugin directory.</p> : (
+            <Table>
+              <thead><tr><Th>Plugin</Th><Th>Signature</Th><Th>State</Th><Th /></tr></thead>
+              <tbody>
+                {data.plugins.map((p) => (
+                  <tr key={p.name}>
+                    <Td>
+                      <p className="font-medium">{p.name} <span className="text-xs text-muted">{p.version}</span></p>
+                      <p className="text-xs text-muted">{p.publisher}{p.kinds.length > 0 && ` · ${p.kinds.join(", ")}`}</p>
+                    </Td>
+                    <Td className="text-xs">
+                      {p.valid ? <span className="font-mono">key {p.key_id.slice(0, 12)}…</span> : <span className="text-danger">{p.reason}</span>}
+                    </Td>
+                    <Td>
+                      {p.runnable ? <Badge tone="success">enabled</Badge> : p.enabled && p.approved_sha256 !== p.sha256 ? <Badge tone="danger">changed since approval</Badge> : <Badge>not enabled</Badge>}
+                    </Td>
+                    <Td className="whitespace-nowrap text-right">
+                      {writable && p.valid && !p.runnable && (
+                        <Button size="sm" variant="ghost" onClick={() => confirm(`Approve ${p.name} ${p.version}? It runs as the API's user with network access.`) && void run(() => privileged(() => api(`/plugins/${p.name}`, { method: "PUT", body: { enabled: true } })))}>Approve</Button>
+                      )}
+                      {writable && p.enabled && (
+                        <Button size="sm" variant="ghost" onClick={() => void run(() => privileged(() => api(`/plugins/${p.name}`, { method: "PUT", body: { enabled: false } })))}>Disable</Button>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+          {writable && <div><Button size="sm" variant="secondary" onClick={() => void run(() => api("/plugins/rescan", { method: "POST" }))}>Rescan directory</Button></div>}
         </div>
       )}
     </Card>
