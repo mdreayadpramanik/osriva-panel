@@ -333,3 +333,16 @@ func (s *Service) queueSystemTask(ctx context.Context, x *store.Server, typ stri
 	s.notify.wake(x.ID)
 	return t, nil
 }
+
+// QueueSystemTask queues a validated task on a server for a caller that is not
+// an operator (scheduled jobs, the Customer Panel); the caller checks ownership.
+func (s *Service) QueueSystemTask(ctx context.Context, serverID, typ string, params json.RawMessage) (*store.Task, error) {
+	x, err := s.store.GetServer(ctx, serverID)
+	if err != nil {
+		return nil, err
+	}
+	if x.Status != store.ServerActive {
+		return nil, &identity.PolicyError{Message: "this server's agent is not enrolled or has been revoked"}
+	}
+	return s.queueSystemTask(ctx, x, typ, params)
+}

@@ -16,6 +16,7 @@ const nav: NavItem[] = [
   { href: "/fleet", label: "Fleet", permission: "servers.read" },
   { href: "/provider", label: "Infrastructure", permission: "provider.read", providerMode: true },
   { href: "/vps", label: "VPS", permission: "provider.read", providerMode: true },
+  { href: "/customers", label: "Customers", permission: "customers.read", providerMode: true },
   { href: "/users", label: "Users & Permissions", permission: "users.read" },
   { href: "/alerts", label: "Alerts", permission: "alerts.read" },
   { href: "/audit", label: "Audit Log", permission: "audit.read" },

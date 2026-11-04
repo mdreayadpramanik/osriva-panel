@@ -62,6 +62,8 @@ type Store struct {
 	idem        map[[2]string]*store.IdempotencyRecord
 	plans       map[string]*store.ServicePlan
 	services    map[string]*store.ProvisionedService
+	customers   map[string]*custRecord
+	custSess    map[string]*store.CustomerSession
 }
 
 var _ store.Store = (*Store)(nil)
@@ -84,6 +86,7 @@ func New() *Store {
 		pools: map[string]*store.IPPool{}, templates: map[string]*store.VMTemplate{}, vps: map[string]*store.VPS{},
 		clients: map[string]*store.APIClient{}, nonces: map[[2]string]time.Time{}, idem: map[[2]string]*store.IdempotencyRecord{},
 		plans: map[string]*store.ServicePlan{}, services: map[string]*store.ProvisionedService{},
+		customers: map[string]*custRecord{}, custSess: map[string]*store.CustomerSession{},
 	}
 }
 

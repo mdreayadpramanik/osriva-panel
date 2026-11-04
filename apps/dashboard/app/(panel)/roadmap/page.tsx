@@ -13,7 +13,7 @@ const phases: { phase: number; title: string; status: "available" | "in-progress
   { phase: 9, title: "Fleet", status: "in-progress", items: ["Server groups", "One task on many servers (batches)", "Durable job queue with retries", "Shared rate limits through Redis (optional)"] },
   { phase: 10, title: "Hosting Provider Mode", status: "in-progress", items: ["Data centers, racks, nodes, IPv4 pools, templates", "libvirt/KVM adapter with VPS create, start, shutdown, reboot, delete", "Proxmox VE adapter (planned, needs a test server)", "OpenStack, CloudStack, vSphere (planned)"] },
   { phase: 11, title: "Provisioning", status: "in-progress", items: ["Technical plans (no prices)", "Signed provisioning API: HMAC, nonce, idempotency", "Signed webhooks for billing systems", "Web hosting backend adapters (planned)"] },
-  { phase: 12, title: "Customer Panel", status: "planned", items: ["Separate customer dashboard", "Strict tenant isolation", "Service controls"] },
+  { phase: 12, title: "Customer Panel", status: "in-progress", items: ["Separate customer accounts, sessions and login", "Strict tenant isolation (own VPS only)", "Start, shut down, reboot", "Websites, backups and MFA for customers (planned)"] },
   { phase: 13, title: "Ecosystem", status: "planned", items: ["Plugin SDK", "Third-party adapters", "Developer documentation"] },
   { phase: 14, title: "Release", status: "planned", items: ["Security audit", "Performance & compatibility testing", "Signed releases"] },
 ];

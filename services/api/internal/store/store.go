@@ -126,6 +126,7 @@ type Store interface {
 	JobStore
 	ProviderStore
 	ProvisioningStore
+	CustomerStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -734,6 +735,7 @@ type VPS struct {
 	CreatedBy      *string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	CustomerID     *string // owner in the Customer Panel (nil: operators only)
 }
 
 // ProviderStore persists Provider Mode infrastructure. Names are unique per
@@ -866,6 +868,70 @@ type ProvisioningStore interface {
 	// ListPendingServices returns services whose operation the reconciler still waits for.
 	ListPendingServices(ctx context.Context, limit int) ([]ProvisionedService, error)
 	UpdateProvisionedService(ctx context.Context, s *ProvisionedService) error
+	GetProvisionedServiceByVPS(ctx context.Context, vpsID string) (*ProvisionedService, error)
 	// DeleteProvisionedService forgets a service that never got a VPS (creation refused).
 	DeleteProvisionedService(ctx context.Context, id string) error
+}
+
+// ---- Customer Panel (Phase 12) ----
+
+type CustomerStatus string
+
+const (
+	CustomerActive   CustomerStatus = "active"
+	CustomerDisabled CustomerStatus = "disabled"
+)
+
+type Customer struct {
+	ID             string
+	OrganizationID string
+	Email          string // lower case
+	Name           string
+	Status         CustomerStatus
+	PasswordHash   string // empty until the setup link was used
+	SetupExpiresAt *time.Time
+	CreatedBy      *string
+	CreatedAt      time.Time
+	LastLoginAt    *time.Time
+}
+
+type CustomerSession struct {
+	ID         string
+	CustomerID string
+	TokenHash  []byte
+	IP         string
+	UserAgent  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastSeenAt time.Time
+	RevokedAt  *time.Time
+}
+
+// CustomerStore persists customers and their sessions. E-mail addresses are
+// unique (ErrConflict). Customer-facing reads always filter by customer id.
+type CustomerStore interface {
+	CreateCustomer(ctx context.Context, c *Customer, setupHash []byte) error
+	GetCustomer(ctx context.Context, id string) (*Customer, error)
+	GetCustomerByEmail(ctx context.Context, email string) (*Customer, error)
+	ListCustomers(ctx context.Context, orgID string) ([]Customer, error)
+	SetCustomerStatus(ctx context.Context, id string, status CustomerStatus) error
+	// SetCustomerSetupToken replaces the one-time setup token.
+	SetCustomerSetupToken(ctx context.Context, id string, hash []byte, expiresAt time.Time) error
+	// ConsumeCustomerSetup sets the password for the unexpired token and clears it
+	// atomically (ErrNotFound when the token is unknown, used or expired).
+	ConsumeCustomerSetup(ctx context.Context, hash []byte, passwordHash string, now time.Time) (*Customer, error)
+	SetCustomerPassword(ctx context.Context, id, passwordHash string) error
+	TouchCustomerLogin(ctx context.Context, id string, at time.Time) error
+
+	CreateCustomerSession(ctx context.Context, s *CustomerSession) error
+	GetCustomerSessionByTokenHash(ctx context.Context, hash []byte) (*CustomerSession, error)
+	TouchCustomerSession(ctx context.Context, id string, at time.Time) error
+	RevokeCustomerSession(ctx context.Context, id string, at time.Time) error
+	// RevokeCustomerSessions revokes every session of the customer except keepID.
+	RevokeCustomerSessions(ctx context.Context, customerID, keepID string, at time.Time) error
+
+	SetVPSCustomer(ctx context.Context, vpsID string, customerID *string) error
+	ListCustomerVPS(ctx context.Context, customerID string) ([]VPS, error)
+	// GetCustomerVPS returns the VPS only when it belongs to the customer (ErrNotFound otherwise).
+	GetCustomerVPS(ctx context.Context, customerID, vpsID string) (*VPS, error)
 }

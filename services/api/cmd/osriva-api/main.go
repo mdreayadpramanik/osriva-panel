@@ -23,6 +23,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/migrations"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/agentdist"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/config"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/customer"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/fleet"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/httpapi"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/identity"
@@ -230,6 +231,12 @@ func cmdServe() error {
 	go fl.RunJanitor(ctx, 30*time.Second)
 	prov := provider.New(rt.store, rt.id, fl, rt.log)
 	billing := provisioning.New(rt.store, rt.id, prov, rt.keys, rt.log)
+	var custLockout ratelimit.Locker = ratelimit.NewLockout(10, 15*time.Minute, 15*time.Minute)
+	if rt.redis != nil {
+		custLockout = ratelimit.NewRedisLockout(rt.redis, 10, 15*time.Minute, 15*time.Minute, custLockout, rt.log)
+	}
+	customers := customer.New(customer.Options{Store: rt.store, Identity: rt.id, Keys: rt.keys, Provider: prov, Log: rt.log,
+		LoginLimiter: rt.limiter("customer-login", 0.2, 10), Lockout: custLockout})
 	billing.UseQueue(queue)
 	billing.UseLessor(lessor)
 	go billing.Run(ctx, 15*time.Second)
@@ -245,7 +252,7 @@ func cmdServe() error {
 	}
 	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, Provisioning: billing, AgentDist: dist,
+		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, Provisioning: billing, Customers: customers, AgentDist: dist,
 		APILimiter: rt.limiter("api", 20, 60), DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}

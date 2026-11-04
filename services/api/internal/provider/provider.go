@@ -946,3 +946,102 @@ func (s *Service) Refresh(ctx context.Context, id string) (*store.VPS, error) {
 	}
 	return s.reconcile(ctx, v)
 }
+
+// ---- Customer Panel ----
+
+// AssignCustomer gives a VPS to a customer (nil removes the owner).
+func (s *Service) AssignCustomer(ctx context.Context, actor *identity.Principal, vpsID string, customerID *string) (*store.VPS, error) {
+	if err := s.requireWrite(ctx, actor); err != nil {
+		return nil, err
+	}
+	if err := s.id.Require(ctx, actor, rbac.CustomersWrite); err != nil {
+		return nil, err
+	}
+	v, err := s.vpsInOrg(ctx, actor, vpsID)
+	if err != nil {
+		return nil, err
+	}
+	if customerID != nil {
+		c, err := s.store.GetCustomer(ctx, *customerID)
+		if err != nil || c.OrganizationID != actor.User.OrganizationID {
+			return nil, verr("customer_id", "unknown customer")
+		}
+	}
+	if err := s.store.SetVPSCustomer(ctx, v.ID, customerID); err != nil {
+		return nil, err
+	}
+	s.audit(ctx, actor, "provider.vps_assign", "vps", v.ID, map[string]any{"name": v.Name, "customer_id": customerID})
+	return s.store.GetVPS(ctx, v.ID)
+}
+
+// CustomerVPS lists a customer's VPS, applying finished operations.
+func (s *Service) CustomerVPS(ctx context.Context, customerID string) ([]store.VPS, error) {
+	list, err := s.store.ListCustomerVPS(ctx, customerID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.VPS, 0, len(list))
+	for i := range list {
+		v, err := s.reconcile(ctx, &list[i])
+		if err != nil {
+			return nil, err
+		}
+		if v != nil {
+			out = append(out, *v)
+		}
+	}
+	return out, nil
+}
+
+// GetCustomerVPS returns one of the customer's VPS (ErrNotFound for anything else).
+func (s *Service) GetCustomerVPS(ctx context.Context, customerID, vpsID string) (*store.VPS, error) {
+	v, err := s.store.GetCustomerVPS(ctx, customerID, vpsID)
+	if err != nil {
+		return nil, err
+	}
+	v, err = s.reconcile(ctx, v)
+	if err != nil {
+		return nil, err
+	}
+	if v == nil {
+		return nil, store.ErrNotFound
+	}
+	return v, nil
+}
+
+// CustomerAction starts, shuts down or reboots a customer's own VPS. Force stop
+// and delete stay with operators and billing systems.
+func (s *Service) CustomerAction(ctx context.Context, customerID, email, vpsID, action string) (*store.VPS, error) {
+	switch action {
+	case agenttask.VMStart, agenttask.VMShutdown, agenttask.VMReboot:
+	default:
+		return nil, verr("action", "must be start, shutdown or reboot")
+	}
+	v, err := s.GetCustomerVPS(ctx, customerID, vpsID)
+	if err != nil {
+		return nil, err
+	}
+	if v.PendingTaskID != nil {
+		return nil, &identity.PolicyError{Message: "another operation on this VPS is still running"}
+	}
+	if v.State != StateRunning && v.State != StateStopped {
+		return nil, &identity.PolicyError{Message: "the VPS is " + v.State}
+	}
+	if ps, err := s.store.GetProvisionedServiceByVPS(ctx, v.ID); err == nil && ps.Status != "active" {
+		return nil, &identity.PolicyError{Message: "the service is " + ps.Status + ": contact your provider"}
+	}
+	n, err := s.store.GetNode(ctx, v.NodeID)
+	if err != nil {
+		return nil, err
+	}
+	t, err := s.fleet.QueueSystemTask(ctx, n.ServerID, agenttask.VMAction, mustJSON(agenttask.VMActionParams{ID: v.ID, Action: action}))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.store.SetVPSState(ctx, v.ID, v.State, &t.ID, pendingOp(action, v.State), ""); err != nil {
+		return nil, err
+	}
+	s.id.Audit(ctx, nil, "customer.vps_action", "vps", v.ID, store.OutcomeSuccess,
+		map[string]any{"name": v.Name, "action": action, "customer_id": customerID, "customer": email, "task_id": t.ID})
+	return s.store.GetVPS(ctx, v.ID)
+}

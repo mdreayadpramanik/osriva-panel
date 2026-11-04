@@ -460,6 +460,8 @@ type ServiceInput struct {
 	ExternalID string   `json:"external_id"`
 	Hostname   string   `json:"hostname"`
 	SSHKeys    []string `json:"ssh_keys"`
+	// CustomerEmail (optional) gives the VPS to an existing Customer Panel account.
+	CustomerEmail string `json:"customer_email"`
 }
 
 // ServiceView is a provisioned service with its VPS.
@@ -523,6 +525,14 @@ func (s *Service) Create(ctx context.Context, c *Caller, in ServiceInput) (*Serv
 	if !agenttask.ValidVMHostname(in.Hostname) {
 		return nil, false, verr("hostname", "must be 1-63 lowercase letters, digits or dashes")
 	}
+	var owner *store.Customer
+	if e := strings.ToLower(strings.TrimSpace(in.CustomerEmail)); e != "" {
+		o, err := s.store.GetCustomerByEmail(ctx, e)
+		if err != nil || o.OrganizationID != c.Client.OrganizationID {
+			return nil, false, verr("customer_email", "no Customer Panel account with this e-mail address")
+		}
+		owner = o
+	}
 	nodeID, err := s.pickNode(ctx, c.Principal, plan)
 	if err != nil {
 		return nil, false, err
@@ -547,6 +557,11 @@ func (s *Service) Create(ctx context.Context, c *Caller, in ServiceInput) (*Serv
 			s.log.Warn("forget failed service", "err", derr)
 		}
 		return nil, false, err
+	}
+	if owner != nil {
+		if err := s.store.SetVPSCustomer(ctx, vps.ID, &owner.ID); err != nil {
+			return nil, false, err
+		}
 	}
 	svc.VPSID = &vps.ID
 	if err := s.store.UpdateProvisionedService(ctx, svc); err != nil {

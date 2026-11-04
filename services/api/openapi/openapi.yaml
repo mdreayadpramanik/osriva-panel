@@ -37,6 +37,8 @@ tags:
   - name: fleet
   - name: provider
   - name: provisioning
+  - name: customers
+  - name: customer-panel
 
 components:
   securitySchemes:
@@ -44,6 +46,11 @@ components:
       type: apiKey
       in: cookie
       name: osriva_session
+    customerCookie:
+      type: apiKey
+      in: cookie
+      name: osriva_customer
+      description: Customer Panel session (Path=/api/v1/customer); never accepted by operator endpoints. Unsafe methods also need X-CSRF-Token from /customer/auth/me.
     csrfHeader:
       type: apiKey
       in: header
@@ -1336,3 +1343,97 @@ paths:
       summary: "{action: suspend | unsuspend | reboot} (scope provisioning.write; Idempotency-Key required). Suspend shuts the guest down gracefully and forces it off if it does not stop."
       responses:
         "202": { description: Service with the pending operation }
+  /customers:
+    get:
+      tags: [customers]
+      summary: Customer Panel accounts with the ids of their VPS (customers.read)
+      responses:
+        "200": { description: "`{customers: [{id, email, name, status, password_set, setup_expires_at, last_login_at, vps_ids}]}`" }
+    post:
+      tags: [customers]
+      summary: "Create a customer (customers.write): {email, name}; returns a one-time setup path (/customer/setup#<token>, valid 72 h)"
+      responses:
+        "201": { description: "`{customer, setup_path}`" }
+  /customers/{customerId}:
+    parameters: [{ name: customerId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch:
+      tags: [customers]
+      summary: "Enable or disable (customers.write): {enabled}; disabling signs the customer out everywhere"
+      responses:
+        "200": { description: Customer }
+  /customers/{customerId}/setup-link:
+    parameters: [{ name: customerId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [customers]
+      summary: New one-time setup link, e.g. for a forgotten password (customers.write + re-auth); signs the customer out
+      responses:
+        "200": { description: "`{customer, setup_path}`" }
+  /provider/vps/{vpsId}/customer:
+    parameters: [{ name: vpsId, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [customers]
+      summary: "Give a VPS to a customer or take it back (customers.write + provider.write): {customer_id | null}"
+      responses:
+        "200": { description: VPS }
+  /customer/auth/login:
+    post:
+      tags: [customer-panel]
+      security: []
+      summary: "Customer login: {email, password}; sets the osriva_customer cookie"
+      responses:
+        "200": { description: "`{customer, csrf_token}`" }
+        "401": { description: Invalid e-mail or password }
+        "429": { description: Too many attempts }
+  /customer/auth/setup:
+    post:
+      tags: [customer-panel]
+      security: []
+      summary: "Set the password with a one-time setup token: {token, password}"
+      responses:
+        "204": { description: Password set }
+        "409": { description: The link is invalid, expired or already used }
+  /customer/auth/me:
+    get:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: The signed-in customer and the CSRF token
+      responses:
+        "200": { description: "`{customer, csrf_token}`" }
+  /customer/auth/logout:
+    post:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: Sign out
+      responses:
+        "204": { description: Signed out }
+  /customer/auth/password:
+    post:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: "Change the password: {current_password, new_password}; other sessions are signed out"
+      responses:
+        "204": { description: Changed }
+  /customer/vps:
+    get:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: The customer's own VPS only
+      responses:
+        "200": { description: "`{vps: [{id, name, ip_address, vcpus, memory_mb, disk_gb, ssh_keys, state, pending, last_operation_failed}]}`" }
+  /customer/vps/{vpsId}:
+    parameters: [{ name: vpsId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: One of the customer's VPS; any other id answers 404
+      responses:
+        "200": { description: VPS }
+        "404": { description: Not found or not yours }
+  /customer/vps/{vpsId}/actions:
+    parameters: [{ name: vpsId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [customer-panel]
+      security: [{ customerCookie: [] }]
+      summary: "{action: start | shutdown | reboot}; refused while the billing service is suspended"
+      responses:
+        "202": { description: VPS with the pending operation }

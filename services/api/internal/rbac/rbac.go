@@ -23,6 +23,8 @@ const (
 	AlertsWrite       = "alerts.write"
 	ProviderRead      = "provider.read"
 	ProviderWrite     = "provider.write"
+	CustomersRead     = "customers.read"
+	CustomersWrite    = "customers.write"
 )
 
 // Catalog maps every permission to its description.
@@ -43,6 +45,8 @@ var Catalog = map[string]string{
 	AlertsWrite:       "Manage alert rules and notification channels (webhooks, e-mail)",
 	ProviderRead:      "View Provider Mode infrastructure (data centers, nodes, IP pools, templates) and VPS",
 	ProviderWrite:     "Manage Provider Mode infrastructure and create, control and delete VPS",
+	CustomersRead:     "View Customer Panel accounts and which VPS they own",
+	CustomersWrite:    "Create and disable customer accounts, issue setup links and assign VPS to customers",
 }
 
 // BuiltinRole is a role shipped with OSRIVA and recreated at every startup.
@@ -67,9 +71,9 @@ func BuiltinRoles() []BuiltinRole {
 	return []BuiltinRole{
 		{RoleOwner, "Owner", "Full control of the panel, including settings", all},
 		{RoleAdmin, "Administrator", "Manage users and sessions; read settings and audit log",
-			[]string{UsersRead, UsersWrite, RolesRead, AuditRead, SettingsRead, SessionsManageAll, ServersRead, ServersWrite, ServersOperate, ServersFiles, ServersAccess, AlertsRead, AlertsWrite, ProviderRead, ProviderWrite}},
+			[]string{UsersRead, UsersWrite, RolesRead, AuditRead, SettingsRead, SessionsManageAll, ServersRead, ServersWrite, ServersOperate, ServersFiles, ServersAccess, AlertsRead, AlertsWrite, ProviderRead, ProviderWrite, CustomersRead, CustomersWrite}},
 		{RoleAuditor, "Auditor", "Read-only access to users, roles, settings and the audit log",
-			[]string{UsersRead, RolesRead, AuditRead, SettingsRead, ServersRead, AlertsRead, ProviderRead}},
+			[]string{UsersRead, RolesRead, AuditRead, SettingsRead, ServersRead, AlertsRead, ProviderRead, CustomersRead}},
 		{RoleMember, "Member", "Can sign in and manage their own account only", nil},
 	}
 }

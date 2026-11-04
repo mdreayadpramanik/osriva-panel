@@ -238,12 +238,12 @@ func (s *Store) DeleteVMTemplate(ctx context.Context, id string) error {
 // ---- VPS ----
 
 const vpsCols = `id::text, organization_id::text, node_id::text, template_id::text, pool_id::text, name, vcpus, memory_mb, disk_gb,
-	host(ip_address), ssh_keys, state, pending_task_id::text, pending_op, last_error, created_by::text, created_at, updated_at`
+	host(ip_address), ssh_keys, state, pending_task_id::text, pending_op, last_error, created_by::text, created_at, updated_at, customer_id::text`
 
 func scanVPS(row pgx.Row) (*store.VPS, error) {
 	var v store.VPS
 	if err := row.Scan(&v.ID, &v.OrganizationID, &v.NodeID, &v.TemplateID, &v.PoolID, &v.Name, &v.VCPUs, &v.MemoryMB, &v.DiskGB,
-		&v.IPAddress, &v.SSHKeys, &v.State, &v.PendingTaskID, &v.PendingOp, &v.LastError, &v.CreatedBy, &v.CreatedAt, &v.UpdatedAt); err != nil {
+		&v.IPAddress, &v.SSHKeys, &v.State, &v.PendingTaskID, &v.PendingOp, &v.LastError, &v.CreatedBy, &v.CreatedAt, &v.UpdatedAt, &v.CustomerID); err != nil {
 		return nil, mapErr(err)
 	}
 	if v.SSHKeys == nil {
@@ -258,10 +258,10 @@ func (s *Store) CreateVPS(ctx context.Context, v *store.VPS) error {
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `INSERT INTO vps (id, organization_id, node_id, template_id, pool_id, name, vcpus, memory_mb, disk_gb,
-				ip_address, ssh_keys, state, pending_task_id, pending_op, last_error, created_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11, $12, $13, $14, $15, $16) RETURNING created_at, updated_at`,
+				ip_address, ssh_keys, state, pending_task_id, pending_op, last_error, created_by, customer_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11, $12, $13, $14, $15, $16, $17) RETURNING created_at, updated_at`,
 			v.ID, v.OrganizationID, v.NodeID, v.TemplateID, v.PoolID, v.Name, v.VCPUs, v.MemoryMB, v.DiskGB, v.IPAddress, v.SSHKeys,
-			v.State, v.PendingTaskID, v.PendingOp, v.LastError, v.CreatedBy).Scan(&v.CreatedAt, &v.UpdatedAt)
+			v.State, v.PendingTaskID, v.PendingOp, v.LastError, v.CreatedBy, v.CustomerID).Scan(&v.CreatedAt, &v.UpdatedAt)
 		if err != nil {
 			return mapErr(err)
 		}

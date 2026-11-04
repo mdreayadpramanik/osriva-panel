@@ -603,7 +603,18 @@ REPLAY_NONCE="$(openssl rand -hex 12)"
 [ "$(signed GET /api/v1/provisioning/plans '' '' "$REPLAY_NONCE")" = 200 ] || fail "signed request"
 [ "$(signed GET /api/v1/provisioning/plans '' '' "$REPLAY_NONCE")" = 401 ] || fail "a reused nonce must be refused"
 [ "$(curl -s -o /dev/null -w '%{http_code}' "$PANEL/api/v1/provisioning/plans")" = 401 ] || fail "unsigned request"
-SVC_BODY="$(jq -nc --arg p "$PLAN_ID" --arg k "$(cat "$VMKEY.pub")" '{plan_id:$p,external_id:"ci-order-1",hostname:"ci-billed-1",ssh_keys:[$k]}')"
+# Phase 12: a Customer Panel account receives the billed VPS.
+CUST="$(api POST /customers '{"email":"ci-customer@example.com","name":"CI Customer"}')"
+CUST_TOKEN="$(jq -r .setup_path <<<"$CUST" | sed 's/.*#//')"
+CJAR="$(mktemp)"
+cust() { # cust METHOD PATH [JSON] (customer cookie jar; CSRF from /customer/auth/me)
+	local args=(-sS -o "$SIGNED_BODY" -w '%{http_code}' -b "$CJAR" -c "$CJAR" -X "$1" "$PANEL/api/v1/customer$2" -H "X-CSRF-Token: ${CUST_CSRF:-}")
+	[ $# -ge 3 ] && args+=(-H "Content-Type: application/json" -d "$3")
+	curl "${args[@]}"
+}
+[ "$(cust POST /auth/setup "$(jq -nc --arg t "$CUST_TOKEN" '{token:$t,password:"ci customer password 1"}')")" = 204 ] || fail "customer setup"
+[ "$(cust POST /auth/setup "$(jq -nc --arg t "$CUST_TOKEN" '{token:$t,password:"ci customer password 2"}')")" = 409 ] || fail "a setup link must work once"
+SVC_BODY="$(jq -nc --arg p "$PLAN_ID" --arg k "$(cat "$VMKEY.pub")" '{plan_id:$p,external_id:"ci-order-1",hostname:"ci-billed-1",ssh_keys:[$k],customer_email:"ci-customer@example.com"}')"
 [ "$(signed POST /api/v1/provisioning/services "$SVC_BODY" ci-create-order-1)" = 202 ] || { cat "$SIGNED_BODY"; fail "provision"; }
 SVC_ID="$(jq -r .id "$SIGNED_BODY")"
 [ "$(signed POST /api/v1/provisioning/services "$SVC_BODY" ci-create-order-1)" = 202 ] && [ "$(jq -r .id "$SIGNED_BODY")" = "$SVC_ID" ] || fail "idempotent retry"
@@ -620,6 +631,18 @@ verify_bill() { local ts sig want
 	want="sha256=$( (printf '%s.' "$ts"; jq -r .body <<<"$1" | base64 -d) | openssl dgst -sha256 -hmac "$CL_SECRET" -r | cut -d' ' -f1)"
 	[ "$sig" = "$want" ]; }
 verify_bill "$(head -n1 "$BILLHOOKS")" || fail "billing webhook signature"
+[ "$(cust POST /auth/login '{"email":"ci-customer@example.com","password":"ci customer password 1"}')" = 200 ] || fail "customer login"
+CUST_CSRF="$(jq -r .csrf_token "$SIGNED_BODY")"
+grep -q "/api/v1/customer" "$CJAR" || fail "customer cookie path"
+[ "$(cust GET /vps)" = 200 ] && jq -e --arg ip "$BILLED_IP" '.vps | length == 1 and .[0].ip_address == $ip and (.[0] | has("node_id") | not)' "$SIGNED_BODY" >/dev/null || { cat "$SIGNED_BODY"; fail "customer sees their VPS only"; }
+CUST_VPS="$(jq -r '.vps[0].id' "$SIGNED_BODY")"
+[ "$(cust POST "/vps/$CUST_VPS/actions" '{"action":"stop"}')" = 400 ] || fail "force stop is not for customers"
+[ "$(cust POST "/vps/$CUST_VPS/actions" '{"action":"reboot"}')" = 202 ] || { cat "$SIGNED_BODY"; fail "customer reboot"; }
+cust_running() { cust GET "/vps/$CUST_VPS" >/dev/null; jq -e '.state == "running" and .pending == ""' "$SIGNED_BODY"; }
+wait_for 120 "customer reboot finished" cust_running || fail "reboot"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b "$CJAR" "$PANEL/api/v1/servers")" = 401 ] || fail "a customer session must not reach operator endpoints"
+[ "$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" "$PANEL/api/v1/customer/vps")" = 401 ] || fail "an operator session must not reach the customer API"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'customer.vps_action' AND metadata->>'customer' = 'ci-customer@example.com'")" = 1 ] || fail "customer audit"
 [ "$(signed DELETE "/api/v1/provisioning/services/$SVC_ID" '' ci-terminate-order-1)" = 202 ] || { cat "$SIGNED_BODY"; fail "terminate"; }
 wait_for 180 "billed service terminated" svc_is terminated || fail "not terminated"
 wait_for 60 "service.terminated webhook" hook_has service.terminated || fail "no service.terminated webhook"

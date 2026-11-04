@@ -255,3 +255,9 @@ func (s *Service) ClientPrincipal(ctx context.Context, userID, clientID string, 
 	p.Session = &store.Session{ID: "api-client:" + clientID, UserID: u.ID, ReauthenticatedAt: &now}
 	return p, nil
 }
+
+// Argon2 returns the password hashing parameters (shared with customer accounts).
+func (s *Service) Argon2() auth.Argon2Params { return s.argon2 }
+
+// DummyHash is verified against for unknown accounts so they take as long as known ones.
+func (s *Service) DummyHash() string { return s.dummyHash }

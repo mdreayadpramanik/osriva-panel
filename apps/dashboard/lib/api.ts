@@ -77,11 +77,13 @@ export function setCsrfToken(token: string | null) {
 
 type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export async function api<T>(path: string, opts: { method?: Method; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
+/** Calls the API. `csrf` overrides the operator CSRF token (the Customer Panel has its own). */
+export async function api<T>(path: string, opts: { method?: Method; body?: unknown; signal?: AbortSignal; csrf?: string | null } = {}): Promise<T> {
   const method = opts.method ?? "GET";
   const headers: Record<string, string> = { Accept: "application/json" };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  if (method !== "GET" && csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  const csrf = opts.csrf !== undefined ? opts.csrf : csrfToken;
+  if (method !== "GET" && csrf) headers["X-CSRF-Token"] = csrf;
 
   let res: Response;
   try {
@@ -535,6 +537,7 @@ export type VPS = {
   last_error: string;
   created_at: string;
   updated_at: string;
+  customer_id?: string | null;
 };
 export type VMHostInfo = {
   available: boolean;
@@ -585,4 +588,16 @@ export type ProvisionedService = {
   last_error: string;
   created_at: string;
   updated_at: string;
+};
+
+export type CustomerAccount = {
+  id: string;
+  email: string;
+  name: string;
+  status: "active" | "disabled";
+  password_set: boolean;
+  setup_expires_at: string | null;
+  created_at: string;
+  last_login_at: string | null;
+  vps_ids?: string[];
 };

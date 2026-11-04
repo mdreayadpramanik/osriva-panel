@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, type HVNode, type IPPool, type VMTemplate, type VPS } from "@/lib/api";
+import { api, errorMessage, type CustomerAccount, type HVNode, type IPPool, type VMTemplate, type VPS } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, EmptyState, LoadingBlock, Modal, PageHeader, Table, Td, Th } from "@/components/ui";
@@ -15,6 +15,7 @@ export default function VPSPage() {
   const [nodes, setNodes] = useState<HVNode[]>([]);
   const [pools, setPools] = useState<IPPool[]>([]);
   const [templates, setTemplates] = useState<VMTemplate[]>([]);
+  const [customers, setCustomers] = useState<CustomerAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -22,16 +23,18 @@ export default function VPSPage() {
 
   const load = useCallback(async () => {
     try {
-      const [v, n, p, t] = await Promise.all([
+      const [v, n, p, t, c] = await Promise.all([
         api<{ vps: VPS[] }>("/provider/vps"),
         api<{ nodes: HVNode[] }>("/provider/nodes"),
         api<{ pools: IPPool[] }>("/provider/ip-pools"),
         api<{ templates: VMTemplate[] }>("/provider/templates"),
+        api<{ customers: CustomerAccount[] }>("/customers").catch(() => ({ customers: [] as CustomerAccount[] })),
       ]);
       setList(v.vps);
       setNodes(n.nodes);
       setPools(p.pools);
       setTemplates(t.templates);
+      setCustomers(c.customers);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -45,6 +48,18 @@ export default function VPSPage() {
 
   const writable = can("provider.write") && me.panel_mode === "provider";
   const nodeName = (id: string) => nodes.find((n) => n.id === id)?.server_name ?? "?";
+
+  async function assign(v: VPS, customerId: string) {
+    setError(null);
+    setNotice(null);
+    try {
+      await api(`/provider/vps/${v.id}/customer`, { method: "PUT", body: { customer_id: customerId || null } });
+      setNotice(customerId ? `${v.name} assigned to its customer.` : `${v.name} no longer has a customer.`);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    await load();
+  }
 
   async function act(v: VPS, action: string) {
     if (action === "stop" && !confirm(`Force off ${v.name}? Unsaved data in the guest is lost.`)) return;
@@ -79,7 +94,7 @@ export default function VPSPage() {
           <EmptyState title="No VPS yet">A VPS is created in about a minute once its image is cached on the node.</EmptyState>
         ) : (
           <Table>
-            <thead><tr><Th>VPS</Th><Th>Address</Th><Th>Size</Th><Th>Node</Th><Th>State</Th><Th className="text-right">{writable ? "Actions" : ""}</Th></tr></thead>
+            <thead><tr><Th>VPS</Th><Th>Address</Th><Th>Size</Th><Th>Node</Th><Th>Customer</Th><Th>State</Th><Th className="text-right">{writable ? "Actions" : ""}</Th></tr></thead>
             <tbody>
               {list.map((v) => (
                 <tr key={v.id}>
@@ -87,6 +102,14 @@ export default function VPSPage() {
                   <Td className="font-mono text-xs">{v.ip_address}</Td>
                   <Td className="text-xs">{v.vcpus} vCPU · {v.memory_mb} MB · {v.disk_gb} GB</Td>
                   <Td className="text-xs">{nodeName(v.node_id)}</Td>
+                  <Td className="text-xs">
+                    {writable && can("customers.write") ? (
+                      <select aria-label={`Customer of ${v.name}`} className="h-8 rounded-lg border border-line bg-surface px-2 text-xs" value={v.customer_id ?? ""} onChange={(e) => void assign(v, e.target.value)}>
+                        <option value="">—</option>
+                        {customers.map((c) => <option key={c.id} value={c.id}>{c.email}</option>)}
+                      </select>
+                    ) : (customers.find((c) => c.id === v.customer_id)?.email ?? "—")}
+                  </Td>
                   <Td>
                     <Badge tone={stateTone[v.state]}>{v.state}</Badge>
                     {v.pending_op && v.state !== "creating" && v.state !== "deleting" && <span className="ml-1 text-xs text-muted">{v.pending_op}…</span>}

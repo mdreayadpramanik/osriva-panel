@@ -97,13 +97,14 @@ type vpsDTO struct {
 	LastError     string   `json:"last_error"`
 	CreatedAt     string   `json:"created_at"`
 	UpdatedAt     string   `json:"updated_at"`
+	CustomerID    *string  `json:"customer_id"`
 }
 
 func toVPSDTO(v *store.VPS) vpsDTO {
 	op, _, _ := cutColon(v.PendingOp)
 	return vpsDTO{ID: v.ID, Name: v.Name, NodeID: v.NodeID, TemplateID: v.TemplateID, PoolID: v.PoolID, VCPUs: v.VCPUs, MemoryMB: v.MemoryMB,
 		DiskGB: v.DiskGB, IPAddress: v.IPAddress, SSHKeys: v.SSHKeys, State: v.State, PendingTaskID: v.PendingTaskID, PendingOp: op,
-		LastError: v.LastError, CreatedAt: ts(v.CreatedAt), UpdatedAt: ts(v.UpdatedAt)}
+		LastError: v.LastError, CreatedAt: ts(v.CreatedAt), UpdatedAt: ts(v.UpdatedAt), CustomerID: v.CustomerID}
 }
 
 func cutColon(s string) (string, string, bool) {
