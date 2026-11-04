@@ -322,3 +322,13 @@ func (s *Store) GetAlertEvent(_ context.Context, id string) (*store.AlertEvent, 
 	}
 	return nil, store.ErrNotFound
 }
+
+func (s *Store) ListAlertStates(_ context.Context) ([]store.AlertState, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.AlertState, 0, len(s.alertStates))
+	for _, st := range s.alertStates {
+		out = append(out, *st)
+	}
+	return out, nil
+}

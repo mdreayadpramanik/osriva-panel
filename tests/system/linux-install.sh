@@ -661,6 +661,23 @@ step "backup"
 sudo "$INSTALLER" backup
 sudo test -s /var/backups/osriva/latest/database.sql.gz
 
+step "restore a chosen backup as on a new host (different secret key; later data is gone)"
+RESTORE_FROM="$(sudo readlink -f /var/backups/osriva/latest)"
+AFTER_ID="$(api POST /server-groups '{"name":"made after the backup","description":"must disappear"}' | jq -r .id)"
+[ -n "$AFTER_ID" ] && [ "$AFTER_ID" != null ] || fail "group after backup"
+# A fresh host has its own secret key: put a different one in place.
+sudo sed -i "s|^OSRIVA_SECRET_KEY=.*|OSRIVA_SECRET_KEY=$(head -c 32 /dev/urandom | base64 -w0)|" /etc/osriva/osriva.env
+# A damaged or missing backup is refused before anything changes.
+! sudo "$INSTALLER" restore --yes >/dev/null 2>&1 || fail 'restore without --from accepted'
+BAD="$(mktemp -d)"; sudo cp "$RESTORE_FROM/osriva.env" "$BAD/"; echo broken | sudo tee "$BAD/database.sql.gz" >/dev/null
+! sudo "$INSTALLER" restore --from "$BAD" --yes >/dev/null 2>&1 || fail 'damaged backup accepted'
+sudo "$INSTALLER" restore --from "$RESTORE_FROM" --yes
+sudo test -f /etc/osriva/osriva.env.before-restore
+[ "$(sudo sed -n 's/^OSRIVA_SECRET_KEY=//p' /etc/osriva/osriva.env)" = "$(sudo sed -n 's/^OSRIVA_SECRET_KEY=//p' "$RESTORE_FROM/osriva.env")" ] || fail "secret key not restored"
+login
+! api GET /server-groups | jq -e --arg id "$AFTER_ID" '[.groups[] | select(.id == $id)] | length > 0' >/dev/null || fail 'group created after the backup survived'
+wait_for 150 "server online after restore (agent CA decrypted with the restored key)" is_online
+
 step "upgrade (same source as a new release) keeps data"
 sudo "$INSTALLER" upgrade --yes
 login

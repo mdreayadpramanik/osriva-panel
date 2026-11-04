@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 )
 
@@ -98,6 +99,11 @@ func decodeStrict(raw json.RawMessage, dst any) error {
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dst); err != nil {
 		return fmt.Errorf("%w: params: %v", ErrInvalid, err)
+	}
+	// Exactly one JSON value: trailing data could be read differently by
+	// another decoder than the one that validated it.
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return fmt.Errorf("%w: params must be a single JSON value", ErrInvalid)
 	}
 	return nil
 }

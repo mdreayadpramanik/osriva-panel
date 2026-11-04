@@ -163,5 +163,8 @@ func LoadManifest(dir string) (*Manifest, error) {
 	if err := dec.Decode(&m); err != nil {
 		return nil, fmt.Errorf("plugin.json: %w", err)
 	}
+	if err := dec.Decode(&struct{}{}); err != io.EOF {
+		return nil, errors.New("plugin.json: must contain a single JSON object")
+	}
 	return &m, nil
 }

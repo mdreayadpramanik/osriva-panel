@@ -77,6 +77,16 @@ func testMonitor(t *testing.T, s store.Store) {
 	if got, _ := s.GetAlertState(ctx(), rule.ID, a.ID); got.Firing || got.Value != 10 {
 		t.Fatalf("state upsert: %+v", got)
 	}
+	states, err := s.ListAlertStates(ctx())
+	found := 0
+	for _, x := range states {
+		if x.RuleID == rule.ID && x.ServerID == a.ID && !x.Firing && x.Value == 10 {
+			found++
+		}
+	}
+	if err != nil || found != 1 {
+		t.Fatalf("ListAlertStates: %+v %v", states, err)
+	}
 
 	ev := &store.AlertEvent{ID: auth.NewID(), OrganizationID: org, RuleID: &rule.ID, RuleName: rule.Name, ServerID: &a.ID, ServerName: a.Name,
 		Metric: "cpu", State: "firing", Value: 95.5, Threshold: 90}

@@ -29,6 +29,7 @@ ENABLE_AGENT=0
 ASSUME_YES=0
 INSTALL_DOCKER=0
 PURGE=0
+FROM=""
 SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
@@ -43,6 +44,7 @@ Commands:
   verify      Run health checks
   backup      Dump the database and configuration to /var/backups/osriva
   rollback    Restore the previous release and the database backup taken before the last upgrade
+  restore     Restore a chosen backup (--from DIR) into this installation, e.g. on a new host
   uninstall   Stop and remove the containers and /opt/osriva (data kept unless --purge)
 
 Options:
@@ -52,6 +54,7 @@ Options:
   --source DIR           OSRIVA source checkout to install from (default: this checkout)
   --install-docker       Allow installing Docker from the distribution's packages if it is missing (Ubuntu only)
   --purge                With uninstall: also delete the database, configuration and backups
+  --from DIR             With restore: the backup directory (e.g. /var/backups/osriva/<timestamp>)
   --yes                  Do not prompt (non-interactive)
 EOF
 }
@@ -64,6 +67,7 @@ while [ $# -gt 0 ]; do
 	--source) SOURCE="$(cd "${2:?--source needs a value}" && pwd)"; shift 2 ;;
 	--install-docker) INSTALL_DOCKER=1; shift ;;
 	--purge) PURGE=1; shift ;;
+	--from) FROM="${2:?--from needs a value}"; shift 2 ;;
 	--yes | -y) ASSUME_YES=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) echo "unknown option: $1" >&2; usage >&2; exit 2 ;;
@@ -414,6 +418,54 @@ cmd_rollback() {
 	ok "rolled back to $(cat "$PREFIX/current/$VERSION_FILE_NAME")"
 }
 
+# cmd_restore restores a backup chosen by the operator, e.g. one copied from a
+# failed host onto a fresh installation. The database is replaced and the
+# backup's secret key is taken over (without it, stored secrets and the agent CA
+# cannot be decrypted); this host's database password and other settings stay.
+cmd_restore() {
+	[ -L "$PREFIX/current" ] || die "not installed: install first, then restore into the new installation"
+	[ -n "$FROM" ] || die "restore needs --from DIR (a directory written by 'backup')"
+	local dir dump key cur_key newer
+	dir="$(readlink -f "$FROM")"
+	dump="$dir/database.sql.gz"
+	[ -f "$dump" ] && [ -f "$dir/osriva.env" ] || die "$dir is not an OSRIVA backup (database.sql.gz and osriva.env expected)"
+	gzip -t "$dump" || die "the database dump in $dir is damaged"
+	[ "$(gzip -dc "$dump" | grep -c 'PostgreSQL database dump complete')" -ge 1 ] || die "the database dump in $dir is incomplete"
+	key="$(sed -n 's/^OSRIVA_SECRET_KEY=//p' "$dir/osriva.env" | tail -n 1)"
+	[ -n "$key" ] || die "the backup has no OSRIVA_SECRET_KEY, so its encrypted data could not be read"
+	cur_key="$(sed -n 's/^OSRIVA_SECRET_KEY=//p' "$ENV_FILE" | tail -n 1)"
+	# A dump from a newer release has migrations this release does not know; it
+	# would start against a schema it does not understand.
+	newer="$(gzip -dc "$dump" | awk '/^COPY public.schema_migrations /{c=1; next} c && /^\\\.$/{c=0} c {print $1}' |
+		while read -r v; do [ -f "$PREFIX/current/migrations/$v.sql" ] || echo "$v"; done)"
+	[ -z "$newer" ] || die "the backup comes from a newer release (unknown migrations: $(echo $newer)); upgrade this installation first"
+	info "Restore plan"
+	echo "  - back up the current state first (to $BACKUP_DIR/<timestamp>)"
+	echo "  - ${R}replace the database${N} with $dump (anything written here since is LOST)"
+	if [ "$key" != "$cur_key" ]; then
+		echo "  - take OSRIVA_SECRET_KEY from the backup (the current file is kept as $ENV_FILE.before-restore)"
+	else
+		echo "  - the secret key is already the backup's; $ENV_FILE stays as it is"
+	fi
+	echo "  - keep this host's database password, domain and agent settings; apply pending migrations; verify"
+	confirm "Proceed with the restore?" || die "aborted"
+	do_backup
+	if [ "$key" != "$cur_key" ]; then
+		cp -p "$ENV_FILE" "$ENV_FILE.before-restore"
+		local tmp
+		tmp="$(mktemp "$CONF_DIR/.osriva.env.XXXXXX")"
+		awk -v k="$key" '/^OSRIVA_SECRET_KEY=/{print "OSRIVA_SECRET_KEY=" k; next} {print}' "$ENV_FILE" >"$tmp"
+		chmod 0600 "$tmp"
+		mv "$tmp" "$ENV_FILE"
+		ok "secret key taken from the backup"
+	fi
+	restore_db "$dump"
+	compose up -d --force-recreate
+	wait_ready || die "the API did not become ready after the restore (previous state: $BACKUP_DIR/latest)"
+	do_verify
+	ok "restored from $dir"
+}
+
 cmd_repair() {
 	[ -L "$PREFIX/current" ] || die "not installed"
 	confirm "Rebuild and recreate all containers of the current release?" || die "aborted"
@@ -453,6 +505,7 @@ repair) cmd_repair ;;
 verify) do_verify ;;
 backup) [ -L "$PREFIX/current" ] || die "not installed"; do_backup ;;
 rollback) cmd_rollback ;;
+restore) cmd_restore ;;
 uninstall) cmd_uninstall ;;
 -h | --help | help | "") usage ;;
 *) echo "unknown command: $CMD" >&2; usage >&2; exit 2 ;;

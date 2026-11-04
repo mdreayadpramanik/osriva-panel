@@ -540,6 +540,8 @@ type MonitorStore interface {
 
 	GetAlertState(ctx context.Context, ruleID, serverID string) (*AlertState, error)
 	PutAlertState(ctx context.Context, s *AlertState) error
+	// ListAlertStates returns every stored rule/server state (one query for a whole evaluation pass).
+	ListAlertStates(ctx context.Context) ([]AlertState, error)
 
 	InsertAlertEvent(ctx context.Context, e *AlertEvent) error
 	GetAlertEvent(ctx context.Context, id string) (*AlertEvent, error)

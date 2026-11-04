@@ -12,7 +12,7 @@
 - [x] Dashboard core (login, overview, users, audit, account, settings, roadmap, theming)
 - [x] PostgreSQL store + migrator (contract suite passed in CI on PostgreSQL 17)
 - [~] Docker Compose stack (images build in CI; `docker compose up` not yet verified)
-- [ ] Add verbatim AGPL-3.0 / Apache-2.0 license texts
+- [x] Add verbatim AGPL-3.0 / Apache-2.0 license texts (LICENSE, pkg/pluginsdk/LICENSE; notices in NOTICE)
 - [x] OpenAPI ↔ router contract test (every /api/v1 route documented; Phase 9a)
 - [ ] Generate `packages/api-client` from the spec
 - [ ] Playwright e2e: login, MFA, user CRUD, audit
@@ -179,11 +179,24 @@
 - [x] PostgreSQL performance test with 300 servers (CI run 41840856234)
 - [x] linux/arm64 runner and six distribution containers (CI run 41840856234)
 - [x] Release workflow, Sigstore keyless signatures, verified dry run (Release run 41840910281)
-- [ ] Independent security audit, penetration test, fuzzing
+- [ ] Independent security audit and penetration test (fuzzing started in 15a)
 - [x] First pre-release v0.1.0 published and verified (Release run 41846227536)
-- [ ] Make the GHCR images public (owner); SBOM and licence report
-- [ ] Batch the alert evaluation queries (linear cost per rule × server)
+- [ ] Make the GHCR images public (owner); SBOM and licence report done in 15a
+- [x] Batch the alert evaluation queries (done in 15a)
 - [ ] Installer and tasks on distributions other than Ubuntu 24.04
+
+## Phase 15a: Production hardening (in progress)
+
+- [x] Verbatim AGPL-3.0 and Apache-2.0 texts; notices moved to NOTICE files
+- [x] Go fuzz tests: file guard, task validation, git/URL/host validators, signed plugin manifests (run in CI)
+- [x] Fuzzing finding fixed: task parameters and plugin.json accepted trailing JSON after the first value
+- [x] CycloneDX SBOMs (agent, API, plugin tool, dashboard) and a third-party licence report in every release
+- [x] Alert evaluation: samples read once per server, states in one query, writes only on transitions
+- [x] `restore --from DIR` in the installer (new host, secret key taken over, newer-release dumps refused) + system test
+- [x] Operator guide docs/operations.md (backups, off-host copies, restore, upgrade, health, hardening)
+- [ ] Independent audit and penetration test (owner: needs an external firm)
+- [ ] Long-running soak test on real hosts the owner provides
+- [ ] Backup retention and off-host copies built into the panel
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

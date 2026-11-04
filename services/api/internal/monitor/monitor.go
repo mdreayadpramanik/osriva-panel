@@ -429,12 +429,66 @@ func (s *Service) ListEvents(ctx context.Context, actor *identity.Principal, lim
 
 // ---- evaluation ----
 
+// evalPass caches what one evaluation pass reads, so the cost grows with the
+// number of servers, not with rules × servers: every server's samples are read
+// once (for the longest window any rule needs), and all alert states come from
+// one query.
+type evalPass struct {
+	since   time.Time
+	samples map[string][]timedSample
+	states  map[[2]string]store.AlertState
+}
+
+type timedSample struct {
+	at time.Time // when the panel stored it (the column the window is measured on)
+	metrics.Sample
+}
+
+func (p *evalPass) serverSamples(ctx context.Context, st store.Store, serverID string) ([]timedSample, error) {
+	if list, ok := p.samples[serverID]; ok {
+		return list, nil
+	}
+	rows, err := st.ListMetrics(ctx, serverID, p.since, 0)
+	if err != nil {
+		return nil, err
+	}
+	list := make([]timedSample, 0, len(rows))
+	for _, row := range rows {
+		var m metrics.Sample
+		if json.Unmarshal(row.Data, &m) == nil {
+			list = append(list, timedSample{at: row.TS, Sample: m})
+		}
+	}
+	p.samples[serverID] = list
+	return list, nil
+}
+
+func usesSamples(metric string) bool {
+	return metric == MetricCPU || metric == MetricMemory || metric == MetricLoad || metric == MetricDisk
+}
+
 // Evaluate checks every enabled rule once; called by the janitor.
 func (s *Service) Evaluate(ctx context.Context, now time.Time) {
 	rules, err := s.store.ListAlertRules(ctx, "")
 	if err != nil {
 		s.log.Warn("alert rules", "err", err)
 		return
+	}
+	stored, err := s.store.ListAlertStates(ctx)
+	if err != nil {
+		s.log.Warn("alert states", "err", err) // without the previous states, transitions cannot be told apart
+		return
+	}
+	pass := &evalPass{since: now, samples: map[string][]timedSample{}, states: make(map[[2]string]store.AlertState, len(stored))}
+	for _, st := range stored {
+		pass.states[[2]string{st.RuleID, st.ServerID}] = st
+	}
+	for _, r := range rules {
+		if r.Enabled && usesSamples(r.Metric) {
+			if t := now.Add(-time.Duration(r.DurationMinutes)*time.Minute - uploadLag); t.Before(pass.since) {
+				pass.since = t
+			}
+		}
 	}
 	servers := map[string][]store.Server{}
 	for i := range rules {
@@ -469,18 +523,18 @@ func (s *Service) Evaluate(ctx context.Context, now time.Time) {
 			if x.Status != store.ServerActive {
 				continue
 			}
-			value, known := s.measure(ctx, r, x, now)
+			value, known := s.measure(ctx, pass, r, x, now)
 			if !known {
 				continue
 			}
-			s.transition(ctx, r, x, value, value > r.Threshold, now)
+			s.transition(ctx, pass, r, x, value, value > r.Threshold, now)
 		}
 	}
 }
 
 // measure returns the rule's current value for a server; known is false when
 // there is not enough data to decide (the state is then left unchanged).
-func (s *Service) measure(ctx context.Context, r *store.AlertRule, x *store.Server, now time.Time) (float64, bool) {
+func (s *Service) measure(ctx context.Context, pass *evalPass, r *store.AlertRule, x *store.Server, now time.Time) (float64, bool) {
 	switch r.Metric {
 	case MetricOffline:
 		if x.LastSeenAt == nil {
@@ -506,15 +560,15 @@ func (s *Service) measure(ctx context.Context, r *store.AlertRule, x *store.Serv
 	}
 	window := time.Duration(r.DurationMinutes) * time.Minute
 	// Agents upload every 30 s, so the newest samples can be that old: look a little further back.
-	rows, err := s.store.ListMetrics(ctx, x.ID, now.Add(-window-uploadLag), 0)
-	if err != nil || len(rows) < 2 {
+	all, err := pass.serverSamples(ctx, s.store, x.ID)
+	if err != nil {
 		return 0, false
 	}
-	samples := make([]metrics.Sample, 0, len(rows))
-	for _, row := range rows {
-		var m metrics.Sample
-		if json.Unmarshal(row.Data, &m) == nil {
-			samples = append(samples, m)
+	cutoff := now.Add(-window - uploadLag)
+	samples := make([]metrics.Sample, 0, len(all))
+	for _, m := range all {
+		if m.at.After(cutoff) {
+			samples = append(samples, m.Sample)
 		}
 	}
 	// Require the samples to cover most of the window, so a single spike right
@@ -562,20 +616,20 @@ func (s *Service) measure(ctx context.Context, r *store.AlertRule, x *store.Serv
 	return sum / float64(len(vals)), true
 }
 
-func (s *Service) transition(ctx context.Context, r *store.AlertRule, x *store.Server, value float64, firing bool, now time.Time) {
-	prev, err := s.store.GetAlertState(ctx, r.ID, x.ID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+func (s *Service) transition(ctx context.Context, pass *evalPass, r *store.AlertRule, x *store.Server, value float64, firing bool, now time.Time) {
+	key := [2]string{r.ID, x.ID}
+	prev, known := pass.states[key]
+	// The state is written only when it is new or flips; nothing reads the
+	// value between transitions, so steady states cost no write per pass.
+	if known && prev.Firing == firing {
 		return
 	}
-	wasFiring := prev != nil && prev.Firing
-	st := &store.AlertState{RuleID: r.ID, ServerID: x.ID, Firing: firing, Since: now, Value: value, UpdatedAt: now}
-	if prev != nil && prev.Firing == firing {
-		st.Since = prev.Since
-	}
-	if err := s.store.PutAlertState(ctx, st); err != nil {
+	st := store.AlertState{RuleID: r.ID, ServerID: x.ID, Firing: firing, Since: now, Value: value, UpdatedAt: now}
+	if err := s.store.PutAlertState(ctx, &st); err != nil {
 		return
 	}
-	if firing == wasFiring || (prev == nil && !firing) {
+	pass.states[key] = st
+	if !known && !firing {
 		return
 	}
 	state := "resolved"

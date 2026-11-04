@@ -127,9 +127,10 @@ sudo ./installer/osriva-install.sh upgrade --source /path/to/newer/checkout
 ```
 
 `upgrade` takes a verified database backup first and rolls back automatically if the new
-release fails its checks. `backup`, `rollback`, `repair` and `uninstall [--purge]` are also
-available (`--help`). Configuration and the secret key live in `/etc/osriva/osriva.env`
-(mode 0600). Back it up.
+release fails its checks. `backup`, `rollback`, `restore --from DIR`, `repair` and
+`uninstall [--purge]` are also available (`--help`). Configuration and the secret key live
+in `/etc/osriva/osriva.env` (mode 0600). Back it up. Backups, restores on a new host and
+upgrades are described in [docs/operations.md](docs/operations.md).
 
 The installer never changes firewall, SSH, disk or network settings. Open 80/tcp and
 443/tcp (and 8443/tcp with `--agent`) yourself. For a real domain, Caddy obtains a

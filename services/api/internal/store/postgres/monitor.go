@@ -252,3 +252,20 @@ func (s *Store) GetAlertEvent(ctx context.Context, id string) (*store.AlertEvent
 	}
 	return &e, nil
 }
+
+func (s *Store) ListAlertStates(ctx context.Context) ([]store.AlertState, error) {
+	rows, err := s.pool.Query(ctx, `SELECT rule_id::text, server_id::text, firing, since, value, updated_at FROM alert_states`)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	defer rows.Close()
+	var out []store.AlertState
+	for rows.Next() {
+		var st store.AlertState
+		if err := rows.Scan(&st.RuleID, &st.ServerID, &st.Firing, &st.Since, &st.Value, &st.UpdatedAt); err != nil {
+			return nil, mapErr(err)
+		}
+		out = append(out, st)
+	}
+	return out, mapErr(rows.Err())
+}

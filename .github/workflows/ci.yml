@@ -45,6 +45,14 @@ jobs:
       - run: go build -o /dev/null ./services/api/cmd/osriva-api
       - name: Known vulnerabilities (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+      - name: Fuzz the security parsers (30 s each)
+        run: |
+          set -e
+          for t in FuzzValidate FuzzValidRelPath FuzzValidGitRef FuzzValidGitURL FuzzURLValidators FuzzHostnames; do
+            go test ./pkg/agenttask -run '^$' -fuzz "^$t\$" -fuzztime 30s
+          done
+          go test ./pkg/pluginsdk -run '^$' -fuzz '^FuzzManifestSignature$' -fuzztime 30s
+          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzGuardCheck$' -fuzztime 30s
       - name: Performance on PostgreSQL 17 (300 servers)
         run: OSRIVA_PERF=1 OSRIVA_PERF_OUT="$PWD/perf.json" go test -count=1 -run TestPerformance -v ./services/api/internal/store/postgres/
       - uses: actions/upload-artifact@v4

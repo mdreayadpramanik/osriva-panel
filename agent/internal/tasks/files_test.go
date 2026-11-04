@@ -13,7 +13,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/pkg/agenttask"
 )
 
-func setup(t *testing.T) (root, outside string, g *FSGuard) {
+func setup(t testing.TB) (root, outside string, g *FSGuard) {
 	t.Helper()
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {

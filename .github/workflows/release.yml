@@ -62,9 +62,33 @@ jobs:
             os=${t%/*}; arch=${t#*/}; ext=; [ "$os" = windows ] && ext=.exe
             GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o "dist/osriva-plugin-${os}-${arch}${ext}" ./pkg/pluginsdk/cmd/osriva-plugin
           done
-          cp installer/osriva-install.sh dist/
+          cp installer/osriva-install.sh LICENSE NOTICE dist/
           ./dist/osriva-agent-linux-amd64 version | grep -qx "${VERSION}"
-          (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: SBOMs (CycloneDX) and licence report
+        run: |
+          set -e
+          gomod="go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0"
+          for m in agent/cmd/osriva-agent services/api/cmd/osriva-api pkg/pluginsdk/cmd/osriva-plugin; do
+            $gomod app -json -licenses -main "$m" -output "dist/$(basename "$m").cdx.json" .
+          done
+          npm ci --omit=dev --ignore-scripts
+          npx --yes @cyclonedx/cyclonedx-npm@1.19.3 --omit dev --output-format JSON --output-file dist/osriva-dashboard.cdx.json
+          {
+            echo "# Third-party licences in OSRIVA Panel ${VERSION}"
+            echo "# Generated from the CycloneDX SBOMs in this release. name<TAB>version<TAB>licence"
+            for f in dist/*.cdx.json; do
+              jq -r '.components[]? | [.name, .version, ((.licenses // []) | map(.license.id // .license.name // .expression) | if length == 0 then "UNKNOWN" else join(" OR ") end)] | @tsv' "$f"
+            done | sort -u
+          } > dist/THIRD_PARTY_LICENSES.tsv
+          echo "components: $(grep -vc '^#' dist/THIRD_PARTY_LICENSES.tsv)"
+          echo "without a detected licence:"; grep -P '\tUNKNOWN$' dist/THIRD_PARTY_LICENSES.tsv || echo "  none"
+          for f in dist/*.cdx.json; do jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "$f" > /dev/null; done
+      - name: Checksums
+        run: (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - uses: sigstore/cosign-installer@v3.7.0
         with:
           cosign-release: v2.4.1
