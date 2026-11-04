@@ -76,17 +76,21 @@ jobs:
             $gomod app -json -licenses -main "$m" -output "dist/$(basename "$m").cdx.json" .
           done
           npm ci --omit=dev --ignore-scripts
-          npx --yes @cyclonedx/cyclonedx-npm@1.19.3 --omit dev --output-format JSON --output-file dist/osriva-dashboard.cdx.json
+          # Run inside the workspace: the root package has no runtime dependencies of its own.
+          (cd apps/dashboard && npx --yes @cyclonedx/cyclonedx-npm@1.19.3 --omit dev --output-format JSON --output-file ../../dist/osriva-dashboard.cdx.json)
           {
             echo "# Third-party licences in OSRIVA Panel ${VERSION}"
             echo "# Generated from the CycloneDX SBOMs in this release. name<TAB>version<TAB>licence"
             for f in dist/*.cdx.json; do
-              jq -r '.components[]? | [.name, .version, ((.licenses // []) | map(.license.id // .license.name // .expression) | if length == 0 then "UNKNOWN" else join(" OR ") end)] | @tsv' "$f"
+              jq -r '.components[]? | [.name, .version, (((.licenses // []) + (.evidence.licenses // [])) | map(.license.id // .license.name // .expression) | if length == 0 then "UNKNOWN" else join(" OR ") end)] | @tsv' "$f"
             done | sort -u
           } > dist/THIRD_PARTY_LICENSES.tsv
           echo "components: $(grep -vc '^#' dist/THIRD_PARTY_LICENSES.tsv)"
           echo "without a detected licence:"; grep -P '\tUNKNOWN$' dist/THIRD_PARTY_LICENSES.tsv || echo "  none"
-          for f in dist/*.cdx.json; do jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "$f" > /dev/null; done
+          for f in dist/*.cdx.json; do
+            echo "$f: $(jq '.components | length' "$f") components"
+            jq -e '.bomFormat == "CycloneDX" and (.components | length) > 0' "$f" > /dev/null || { echo "$f has no components"; exit 1; }
+          done
       - name: Checksums
         run: (cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS)
       - uses: sigstore/cosign-installer@v3.7.0
