@@ -45,7 +45,7 @@
 - [x] Docker Compose stack verified end to end (Ubuntu 24.04 CI runner)
 - [ ] Installer on Debian, RHEL family, SUSE; `--install-docker` beyond Ubuntu
 - [ ] Let's Encrypt with a real domain on a long-lived VPS
-- [~] Signed release artifacts + checksums (Sigstore keyless), GitHub release workflow: dry run verified (Phase 14a); nothing published yet
+- [x] Signed release artifacts + checksums (Sigstore keyless), GitHub release workflow: v0.1.0 pre-release published (Phase 14a)
 - [ ] Agent self-update from the panel
 
 ## Phase 3a: Tasks, metrics, services, processes (done)
@@ -180,7 +180,8 @@
 - [x] linux/arm64 runner and six distribution containers (CI run 41840856234)
 - [x] Release workflow, Sigstore keyless signatures, verified dry run (Release run 41840910281)
 - [ ] Independent security audit, penetration test, fuzzing
-- [ ] Publish a first pre-release (tag path not run yet); SBOM and licence report
+- [x] First pre-release v0.1.0 published and verified (Release run 41846227536)
+- [ ] Make the GHCR images public (owner); SBOM and licence report
 - [ ] Batch the alert evaluation queries (linear cost per rule × server)
 - [ ] Installer and tasks on distributions other than Ubuntu 24.04
 

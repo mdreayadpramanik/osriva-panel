@@ -10,34 +10,47 @@ Releases are built by `.github/workflows/release.yml`.
   exists that could leak.
 * **Container images** (tags only) are pushed to GHCR and signed the same way.
 
-Status (2026-11-04): only **dry runs** have been made. They build, sign and verify
-everything and keep the files as a workflow artifact, without publishing anything. No
-release has been published yet, and the tag path, which pushes images and creates a
-GitHub pre-release, has not been run.
+## Published releases
+
+| Version | Date | Notes |
+|---------|------|-------|
+| [v0.1.0](https://github.com/mdreayadpramanik/osriva-panel/releases/tag/v0.1.0) | 2026-11-04 | First **pre-release**, not production-ready. Release run 41846227536. Signature and checksums verified independently with cosign 2.4.1 on Windows 11. The images `ghcr.io/mdreayadpramanik/osriva-panel/{api,dashboard}:0.1.0` are signed (Rekor entries 3690534729 and 3690535048) but still **private** on GHCR, so pulling them needs a GitHub login until the owner makes the packages public. |
 
 ## Verifying a download
 
-Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 2.x, then
-in the directory with the downloaded files:
+Install [cosign](https://docs.sigstore.dev/cosign/system_config/installation/) 2.x, then,
+in the directory with the downloaded files, use the exact identity of the version you
+downloaded (here v0.1.0):
 
 ```sh
 cosign verify-blob \
   --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/mdreayadpramanik/osriva-panel/\.github/workflows/release\.yml@refs/tags/v' \
+  --certificate-identity https://github.com/mdreayadpramanik/osriva-panel/.github/workflows/release.yml@refs/tags/v0.1.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
-The first command proves that `SHA256SUMS` was produced by this repository's release
-workflow for a `v*` tag. The second checks your files against it. If either fails, do not
-use the files.
+The first command proves that `SHA256SUMS` was signed by this repository's release
+workflow running for that tag. The second checks your files against it. If either fails,
+do not use the files.
 
-A container image (once published) can be verified with:
+To accept any release tag instead of one version, replace `--certificate-identity …`
+with:
 
 ```sh
-cosign verify ghcr.io/mdreayadpramanik/osriva-panel/api:<version> \
-  --certificate-identity-regexp '^https://github.com/mdreayadpramanik/osriva-panel/\.github/workflows/release\.yml@refs/tags/v' \
+--certificate-identity-regexp '^https://github.com/mdreayadpramanik/osriva-panel/.github/workflows/release.yml@refs/tags/v'
+```
+
+Keep this pattern free of backslash escapes. In testing on Windows (Git Bash), the
+escaped form `\.` did not match the certificate and verification failed, although the
+signature was correct.
+
+A container image can be verified the same way, once you can pull it:
+
+```sh
+cosign verify ghcr.io/mdreayadpramanik/osriva-panel/api:0.1.0 \
+  --certificate-identity https://github.com/mdreayadpramanik/osriva-panel/.github/workflows/release.yml@refs/tags/v0.1.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
@@ -47,7 +60,11 @@ cosign verify ghcr.io/mdreayadpramanik/osriva-panel/api:<version> \
    current.
 2. Run a dry run: **Actions → Release → Run workflow**, or
    `gh workflow run release.yml -f version=<x.y.z-rc>`.
-3. Tag and push: `git tag v<x.y.z> && git push origin v<x.y.z>`. The workflow builds,
-   signs and verifies again, pushes and signs the images, and creates a GitHub
-   **pre-release**. OSRIVA Panel is not production-ready, so releases stay pre-releases
-   until the remaining Phase 14 items are done.
+3. Tag and push: `git tag -a v<x.y.z> -m … && git push origin v<x.y.z>`. The workflow
+   builds, signs and verifies again, pushes and signs the images, and creates a GitHub
+   **pre-release**.
+4. New GHCR packages start out private. Make them public under the package settings on
+   GitHub if anyone should be able to pull them.
+
+OSRIVA Panel is not production-ready, so releases stay pre-releases until an independent
+audit and the remaining open items are done.

@@ -1,6 +1,6 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **14a (security audit, performance, compatibility, release dry run) done** · Next: **owner decisions: publish a first pre-release; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
+Last updated: **2026-11-04** · Current phase: **14a done, v0.1.0 pre-release published** · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
@@ -57,12 +57,16 @@ distributions.
 | `cosign verify-blob` with the exact workflow identity, then `sha256sum -c` | `Verified OK`, every file OK |
 | A tampered checksum list, and a different signer identity | both refused |
 | Container images (API, dashboard) | built, not pushed |
+| v0.1.0 pre-release (tag `v0.1.0`, Release run 41846227536) | 17 files published; signature verified independently with cosign; images pushed to GHCR and signed (still private) |
 
 ### Not done / limitations
 
 * **No independent audit:** no third-party audit, penetration test or fuzzing yet.
-* **Release:** no release was published. The tag path (GHCR push, image signing, GitHub pre-release) has never run.
-  SBOM and licence report are missing.
+* **Release:** on owner request, **v0.1.0 was published as a GitHub pre-release** (Release run 41846227536, tag on
+  `b6c6091`). The signature and checksums were verified independently with cosign 2.4.1, and a tampered checksum list
+  was refused. That check also showed the documented identity regex failed: `.` escapes did not match on Windows, so
+  docs/releasing.md now uses the exact identity. The images are signed but still private on GHCR, and making them
+  public is the owner's choice. SBOM and licence report are missing.
 * **Verbatim licence texts:** the AGPL-3.0 and Apache-2.0 texts are still to be added from the official sources (Phase 1
   item).
 * **Remaining items needing owner input:** 5b, 7b, 10b and 11b need credentials or test servers; 6b and 8b are open.
