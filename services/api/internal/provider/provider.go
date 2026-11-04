@@ -799,7 +799,14 @@ func (s *Service) reconcile(ctx context.Context, v *store.VPS) (*store.VPS, erro
 		if r.State == "running" {
 			state = StateRunning
 		}
-		if err := s.store.SetVPSState(ctx, v.ID, state, nil, "", ""); err != nil {
+		note := ""
+		if op == agenttask.VMShutdown && state == StateRunning {
+			note = "shutdown: " + r.Logs // the guest ignored the request; force off is needed
+			if r.Logs == "" {
+				note = "shutdown: the guest did not power off"
+			}
+		}
+		if err := s.store.SetVPSState(ctx, v.ID, state, nil, "", note); err != nil {
 			return v, err
 		}
 	} else {

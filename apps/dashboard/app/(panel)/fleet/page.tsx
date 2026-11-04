@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, type Server, type ServerGroup, type Task, type TaskBatch } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
@@ -296,6 +296,15 @@ function RunCard({ servers, groups, types, maxServers, onRun }: {
 }) {
   const [target, setTarget] = useState<string>(groups[0] ? `g:${groups[0].id}` : "pick");
   const [picked, setPicked] = useState<string[]>([]);
+  // When the first group appears, target it once; a later manual choice of
+  // "Selected servers…" is left alone.
+  const hadGroups = useRef(groups.length > 0);
+  useEffect(() => {
+    if (!hadGroups.current && groups[0]) {
+      hadGroups.current = true;
+      if (picked.length === 0) setTarget(`g:${groups[0].id}`);
+    }
+  }, [groups, picked.length]);
   const [type, setType] = useState("services.list");
   const [params, setParams] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);

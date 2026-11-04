@@ -295,19 +295,20 @@ func (s *Service) batchInOrg(ctx context.Context, actor *identity.Principal, id 
 	return b, nil
 }
 
-func (s *Service) batchView(ctx context.Context, b *store.TaskBatch) (*BatchView, error) {
+func (s *Service) batchView(ctx context.Context, b *store.TaskBatch, names map[string]string) (*BatchView, error) {
 	tasks, err := s.store.ListBatchTasks(ctx, b.ID)
 	if err != nil {
 		return nil, err
 	}
+	if names == nil {
+		if names, err = s.serverNames(ctx, b.OrganizationID); err != nil {
+			return nil, err
+		}
+	}
 	v := &BatchView{Batch: *b, Skipped: []SkippedServer{}, Counts: map[string]int{}}
 	_ = json.Unmarshal(b.Skipped, &v.Skipped)
 	for _, t := range tasks {
-		name := ""
-		if x, err := s.store.GetServer(ctx, t.ServerID); err == nil {
-			name = x.Name
-		}
-		v.Tasks = append(v.Tasks, BatchTask{Task: t, ServerName: name})
+		v.Tasks = append(v.Tasks, BatchTask{Task: t, ServerName: names[t.ServerID]})
 		v.Counts[string(t.Status)]++
 	}
 	slices.SortFunc(v.Tasks, func(a, b BatchTask) int { return strings.Compare(a.ServerName, b.ServerName) })
@@ -320,7 +321,7 @@ func (s *Service) GetBatch(ctx context.Context, actor *identity.Principal, id st
 	if err != nil {
 		return nil, err
 	}
-	return s.batchView(ctx, b)
+	return s.batchView(ctx, b, nil)
 }
 
 func (s *Service) ListBatches(ctx context.Context, actor *identity.Principal, limit int) ([]BatchView, error) {
@@ -334,13 +335,30 @@ func (s *Service) ListBatches(ctx context.Context, actor *identity.Principal, li
 	if err != nil {
 		return nil, err
 	}
+	names, err := s.serverNames(ctx, actor.User.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]BatchView, 0, len(list))
 	for i := range list {
-		v, err := s.batchView(ctx, &list[i])
+		v, err := s.batchView(ctx, &list[i], names)
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, *v)
 	}
 	return out, nil
+}
+
+// serverNames maps the organization's server ids to names with one query.
+func (s *Service) serverNames(ctx context.Context, orgID string) (map[string]string, error) {
+	list, err := s.store.ListServers(ctx, orgID)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(list))
+	for _, x := range list {
+		names[x.ID] = x.Name
+	}
+	return names, nil
 }

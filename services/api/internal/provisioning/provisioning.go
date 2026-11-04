@@ -37,8 +37,10 @@ const (
 	ScopeWrite = "provisioning.write"
 
 	// SignatureWindow bounds the clock difference and the life of a signed request.
-	SignatureWindow    = 5 * time.Minute
-	idempotencyTTL     = 24 * time.Hour
+	SignatureWindow = 5 * time.Minute
+	idempotencyTTL  = 24 * time.Hour
+	// abandonAfter is how long an unfinished request may hold its idempotency key.
+	abandonAfter       = 2 * time.Minute
 	webhookJob         = "provisioning.webhook"
 	StatusProvisioning = "provisioning"
 	StatusActive       = "active"
@@ -329,7 +331,9 @@ func (s *Service) Verify(ctx context.Context, r SignedRequest) (*Caller, error) 
 	if err != nil {
 		return fail("creator_inactive", ErrBadSignature)
 	}
-	_ = s.store.TouchAPIClient(ctx, c.ID, now)
+	if c.LastUsedAt == nil || now.Sub(*c.LastUsedAt) > time.Minute { // minute resolution is enough
+		_ = s.store.TouchAPIClient(ctx, c.ID, now)
+	}
 	return &Caller{Client: c, Principal: p, Secret: string(plain)}, nil
 }
 
@@ -346,7 +350,17 @@ func IdempotencyHash(method, pathQuery string, body []byte) string {
 // Begin reserves an idempotency key; it returns the stored record when the key
 // was used before (StatusCode 0 means the first request is still running).
 func (s *Service) Begin(ctx context.Context, clientID, key, hash string) (*store.IdempotencyRecord, error) {
-	return s.store.BeginIdempotent(ctx, &store.IdempotencyRecord{ClientID: clientID, Key: key, RequestHash: hash})
+	rec := &store.IdempotencyRecord{ClientID: clientID, Key: key, RequestHash: hash}
+	old, err := s.store.BeginIdempotent(ctx, rec)
+	// A first request that never finished (the API stopped mid-request) must not
+	// block the key for a day: after abandonAfter it is forgotten and retried.
+	if err == nil && old != nil && old.StatusCode == 0 && s.id.Now().Sub(old.CreatedAt) > abandonAfter {
+		if err := s.store.DeleteIdempotent(ctx, clientID, key); err != nil {
+			return nil, err
+		}
+		return s.store.BeginIdempotent(ctx, rec)
+	}
+	return old, err
 }
 
 // Finish stores the response; server errors are forgotten so the client may retry.
@@ -491,12 +505,13 @@ func (s *Service) pickNode(ctx context.Context, actor *identity.Principal, plan 
 	best, bestFree := "", -1
 	for _, n := range nodes {
 		freeMem, freeCPU := n.MemoryMB-n.UsedMemoryMB, n.VCPUs-n.UsedVCPUs
-		if n.Node.Enabled && freeMem >= plan.MemoryMB && freeCPU >= plan.VCPUs && freeMem > bestFree {
+		// A task on an offline agent would only expire: choose online nodes only.
+		if n.Node.Enabled && n.Connection == "online" && freeMem >= plan.MemoryMB && freeCPU >= plan.VCPUs && freeMem > bestFree {
 			best, bestFree = n.Node.ID, freeMem
 		}
 	}
 	if best == "" {
-		return "", &identity.PolicyError{Message: "no node has capacity for this plan"}
+		return "", &identity.PolicyError{Message: "no online node has capacity for this plan"}
 	}
 	return best, nil
 }
