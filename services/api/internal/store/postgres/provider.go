@@ -232,7 +232,7 @@ func (s *Store) ListVMTemplates(ctx context.Context, orgID string) ([]store.VMTe
 }
 
 func (s *Store) DeleteVMTemplate(ctx context.Context, id string) error {
-	return s.execOne(ctx, `DELETE FROM vm_templates WHERE id = $1`, id)
+	return s.deleteRestricted(ctx, `DELETE FROM vm_templates WHERE id = $1`, id)
 }
 
 // ---- VPS ----

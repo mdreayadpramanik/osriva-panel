@@ -578,6 +578,55 @@ wait_for 180 "VPS deleted" vps_gone || fail "VPS not deleted"
 api GET /provider/ip-pools | jq -e '.pools[0].allocated | length == 0' >/dev/null || fail "address not released"
 sudo virsh -c qemu:///system net-info default | grep -q 'Active: *yes' || fail "the libvirt network must be untouched"
 [ "$(pg "SELECT count(*) FROM audit_logs WHERE action LIKE 'provider.vps_%'")" -ge 4 ] || fail "provider audit entries"
+# ---- Phase 11: a billing system provisions a VPS through the signed API ----
+login # re-authentication for creating the API client
+BILLHOOKS="$(mktemp)"
+python3 "$(dirname "$0")/webhook-receiver.py" 18097 "$BILLHOOKS" &
+BILL_PID=$!
+PLAN_ID="$(api POST /provider/plans "$(jq -nc --arg t "$TPL_ID" --arg p "$POOL_ID" '{name:"ci-small",template_id:$t,pool_id:$p,vcpus:1,memory_mb:1024,disk_gb:6}')" | jq -r .id)"
+CL="$(api POST /api-clients "$(jq -nc --arg u "http://$GW:18097/billing" '{name:"ci-billing",scopes:["provisioning.read","provisioning.write"],webhook_url:$u}')")"
+CL_KEY="$(jq -r .client.key_id <<<"$CL")"; CL_SECRET="$(jq -r .secret <<<"$CL")"
+[ "${#CL_SECRET}" = 64 ] || fail "API client secret"
+SIGNED_BODY="$(mktemp)"
+signed() { # signed METHOD PATH [BODY] [IDEMPOTENCY_KEY] [NONCE] -> HTTP status; body in $SIGNED_BODY
+	local m="$1" p="$2" b="${3:-}" k="${4:-}" n="${5:-$(openssl rand -hex 12)}" ts sig
+	ts="$(date +%s)"
+	sig="sha256=$(printf '%s\n%s\n%s\n%s\n%s' "$m" "$p" "$ts" "$n" "$(printf '%s' "$b" | sha256sum | cut -d' ' -f1)" | openssl dgst -sha256 -hmac "$CL_SECRET" -r | cut -d' ' -f1)"
+	local args=(-sS -o "$SIGNED_BODY" -w '%{http_code}' -X "$m" "$PANEL$p" -H "X-Osriva-Key: $CL_KEY" -H "X-Osriva-Timestamp: $ts"
+		-H "X-Osriva-Nonce: $n" -H "X-Osriva-Signature: $sig")
+	[ -n "$b" ] && args+=(-H "Content-Type: application/json" -d "$b")
+	[ -n "$k" ] && args+=(-H "Idempotency-Key: $k")
+	curl "${args[@]}"
+}
+[ "$(signed GET /api/v1/provisioning/plans)" = 200 ] && jq -e '.plans | length == 1' "$SIGNED_BODY" >/dev/null || fail "signed plans"
+REPLAY_NONCE="$(openssl rand -hex 12)"
+[ "$(signed GET /api/v1/provisioning/plans '' '' "$REPLAY_NONCE")" = 200 ] || fail "signed request"
+[ "$(signed GET /api/v1/provisioning/plans '' '' "$REPLAY_NONCE")" = 401 ] || fail "a reused nonce must be refused"
+[ "$(curl -s -o /dev/null -w '%{http_code}' "$PANEL/api/v1/provisioning/plans")" = 401 ] || fail "unsigned request"
+SVC_BODY="$(jq -nc --arg p "$PLAN_ID" --arg k "$(cat "$VMKEY.pub")" '{plan_id:$p,external_id:"ci-order-1",hostname:"ci-billed-1",ssh_keys:[$k]}')"
+[ "$(signed POST /api/v1/provisioning/services "$SVC_BODY" ci-create-order-1)" = 202 ] || { cat "$SIGNED_BODY"; fail "provision"; }
+SVC_ID="$(jq -r .id "$SIGNED_BODY")"
+[ "$(signed POST /api/v1/provisioning/services "$SVC_BODY" ci-create-order-1)" = 202 ] && [ "$(jq -r .id "$SIGNED_BODY")" = "$SVC_ID" ] || fail "idempotent retry"
+[ "$(signed POST /api/v1/provisioning/services "$SVC_BODY" ci-create-order-1-again)" = 200 ] && [ "$(jq -r .id "$SIGNED_BODY")" = "$SVC_ID" ] || fail "same external id"
+svc_status() { signed GET "/api/v1/provisioning/services/$SVC_ID" >/dev/null; jq -r .status "$SIGNED_BODY"; }
+svc_is() { [ "$(svc_status)" = "$1" ]; }
+wait_for 300 "billed service active (image already cached)" svc_is active || { cat "$SIGNED_BODY"; fail "service not active"; }
+BILLED_IP="$(jq -r .ip_address "$SIGNED_BODY")"
+[ "$BILLED_IP" = 192.168.122.100 ] || fail "billed service address: $BILLED_IP"
+hook_has() { jq -e --arg e "$1" 'select(.headers["X-Osriva-Event"] == $e)' "$BILLHOOKS" >/dev/null 2>&1; }
+wait_for 60 "service.active webhook" hook_has service.active || fail "no service.active webhook"
+verify_bill() { local ts sig want
+	ts="$(jq -r '.headers["X-Osriva-Timestamp"]' <<<"$1")"; sig="$(jq -r '.headers["X-Osriva-Signature"]' <<<"$1")"
+	want="sha256=$( (printf '%s.' "$ts"; jq -r .body <<<"$1" | base64 -d) | openssl dgst -sha256 -hmac "$CL_SECRET" -r | cut -d' ' -f1)"
+	[ "$sig" = "$want" ]; }
+verify_bill "$(head -n1 "$BILLHOOKS")" || fail "billing webhook signature"
+[ "$(signed DELETE "/api/v1/provisioning/services/$SVC_ID" '' ci-terminate-order-1)" = 202 ] || { cat "$SIGNED_BODY"; fail "terminate"; }
+wait_for 180 "billed service terminated" svc_is terminated || fail "not terminated"
+wait_for 60 "service.terminated webhook" hook_has service.terminated || fail "no service.terminated webhook"
+[ "$(pg "SELECT count(*) FROM audit_logs WHERE action = 'provisioning.service_create' AND metadata->>'api_client' IS NOT NULL")" = 1 ] || fail "audit attribution"
+kill "$BILL_PID" || true
+login
+
 api DELETE "/provider/nodes/$NODE_ID" >/dev/null || fail "remove node"
 api PUT /settings/panel-mode '{"mode":"personal"}' >/dev/null
 

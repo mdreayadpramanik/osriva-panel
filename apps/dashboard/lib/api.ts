@@ -547,3 +547,42 @@ export type VMHostInfo = {
   cpus: number;
   memory_bytes: number;
 };
+
+export type ServicePlan = {
+  id: string;
+  name: string;
+  kind: "vps";
+  template_id: string;
+  pool_id: string;
+  node_id: string | null;
+  vcpus: number;
+  memory_mb: number;
+  disk_gb: number;
+  enabled: boolean;
+};
+export type APIClient = {
+  id: string;
+  name: string;
+  key_id: string;
+  scopes: string[];
+  allowed_cidrs: string[];
+  webhook_url: string;
+  enabled: boolean;
+  created_by: string;
+  created_at: string;
+  last_used_at: string | null;
+};
+export type ProvisionedService = {
+  id: string;
+  external_id: string;
+  plan_id: string | null;
+  client_id: string;
+  status: "provisioning" | "active" | "suspended" | "failed" | "terminating" | "terminated";
+  pending: string;
+  vps_id: string | null;
+  hostname: string;
+  ip_address: string;
+  last_error: string;
+  created_at: string;
+  updated_at: string;
+};

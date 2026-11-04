@@ -605,7 +605,7 @@ func (s *Service) DeleteTemplate(ctx context.Context, actor *identity.Principal,
 		return err
 	}
 	if err := s.store.DeleteVMTemplate(ctx, t.ID); err != nil {
-		return err
+		return inUse(err, "the template (a plan uses it)")
 	}
 	s.audit(ctx, actor, "provider.template_delete", "vm_template", t.ID, map[string]any{"name": t.Name})
 	return nil
@@ -932,4 +932,17 @@ func (s *Service) Delete(ctx context.Context, actor *identity.Principal, id, con
 	}
 	s.audit(ctx, actor, "provider.vps_delete", "vps", v.ID, map[string]any{"name": v.Name, "ip": v.IPAddress, "task_id": t.ID})
 	return s.store.GetVPS(ctx, v.ID)
+}
+
+// Refresh applies a finished pending task to a VPS without an actor (used by
+// background reconcilers); it returns nil when the VPS no longer exists.
+func (s *Service) Refresh(ctx context.Context, id string) (*store.VPS, error) {
+	v, err := s.store.GetVPS(ctx, id)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.reconcile(ctx, v)
 }

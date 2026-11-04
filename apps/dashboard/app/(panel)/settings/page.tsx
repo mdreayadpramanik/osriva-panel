@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, errorMessage, type JobQueueStatus } from "@/lib/api";
+import { api, errorMessage, type APIClient, type JobQueueStatus } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, LoadingBlock, PageHeader, Table, Td, Th, cx } from "@/components/ui";
@@ -108,6 +108,9 @@ export default function SettingsPage() {
       </div>
       <div className="mt-6">
         <JobQueueCard />
+      </div>
+      <div className="mt-6">
+        <APIClientsCard />
       </div>
     </>
   );
@@ -220,6 +223,123 @@ function JobQueueCard() {
                 ))}
               </tbody>
             </Table>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function APIClientsCard() {
+  const { can, privileged } = useSession();
+  const [clients, setClients] = useState<APIClient[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ client: APIClient; secret: string } | null>(null);
+  const [form, setForm] = useState({ name: "", write: true, cidrs: "", webhook: "" });
+  const [busy, setBusy] = useState(false);
+  const load = () =>
+    api<{ clients: APIClient[] }>("/api-clients")
+      .then((r) => {
+        setClients(r.clients);
+        setError(null);
+      })
+      .catch((e) => setError(errorMessage(e)));
+  useEffect(() => void load(), []);
+  const writable = can("settings.write");
+
+  async function create() {
+    setBusy(true);
+    setError(null);
+    try {
+      const body = {
+        name: form.name,
+        scopes: form.write ? ["provisioning.read", "provisioning.write"] : ["provisioning.read"],
+        allowed_cidrs: form.cidrs.split(/[\s,]+/).filter(Boolean),
+        webhook_url: form.webhook.trim(),
+      };
+      setCreated(await privileged(() => api<{ client: APIClient; secret: string }>("/api-clients", { method: "POST", body })));
+      setForm({ name: "", write: true, cidrs: "", webhook: "" });
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+    await load();
+  }
+  async function toggle(c: APIClient) {
+    setError(null);
+    try {
+      await privileged(() => api(`/api-clients/${c.id}`, { method: "PATCH", body: { enabled: !c.enabled } }));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    await load();
+  }
+  async function remove(c: APIClient) {
+    if (!confirm(`Delete the API client ${c.name}? Requests signed with its key stop working.`)) return;
+    setError(null);
+    try {
+      await privileged(() => api(`/api-clients/${c.id}`, { method: "DELETE" }));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    await load();
+  }
+  const input = "h-9 rounded-lg border border-line bg-surface px-3 text-sm";
+  return (
+    <Card
+      title="API clients (billing systems)"
+      description="Billing systems such as WHMCS, Blesta or HostBill call the signed provisioning API (HMAC-SHA256, nonce, 5-minute window, Idempotency-Key). A client acts with its creator's permissions, limited to its scopes."
+    >
+      {error && <Alert>{error}</Alert>}
+      {created && (
+        <div className="mb-3">
+          <Alert tone="warning" title={`Secret for ${created.client.name} (shown once)`}>
+            <p>Key: <span className="select-all font-mono text-xs">{created.client.key_id}</span></p>
+            <p className="select-all break-all font-mono text-xs">{created.secret}</p>
+            <p className="mt-1 text-xs">Store it in the billing system. Webhooks are signed with the same secret: X-Osriva-Signature = sha256=HMAC(secret, timestamp + &quot;.&quot; + body).</p>
+          </Alert>
+        </div>
+      )}
+      {!clients ? (
+        !error && <LoadingBlock />
+      ) : (
+        <div className="flex flex-col gap-4 text-sm">
+          {clients.length === 0 ? <p className="text-muted">No API clients yet.</p> : (
+            <Table>
+              <thead><tr><Th>Client</Th><Th>Scopes</Th><Th>Last used</Th><Th /></tr></thead>
+              <tbody>
+                {clients.map((c) => (
+                  <tr key={c.id}>
+                    <Td>
+                      <p className="font-medium">{c.name} {!c.enabled && <Badge tone="warning">disabled</Badge>}</p>
+                      <p className="font-mono text-[11px] text-muted">{c.key_id}</p>
+                      {c.allowed_cidrs.length > 0 && <p className="text-[11px] text-muted">from {c.allowed_cidrs.join(", ")}</p>}
+                      {c.webhook_url && <p className="text-[11px] text-muted">webhook {c.webhook_url}</p>}
+                    </Td>
+                    <Td className="text-xs">{c.scopes.join(", ")}</Td>
+                    <Td className="text-xs text-muted">{c.last_used_at ? formatDate(c.last_used_at) : "never"}</Td>
+                    <Td className="whitespace-nowrap text-right">
+                      {writable && (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => void toggle(c)}>{c.enabled ? "Disable" : "Enable"}</Button>
+                          <Button size="sm" variant="ghost" onClick={() => void remove(c)}>Delete</Button>
+                        </>
+                      )}
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+          {writable && (
+            <div className="flex flex-wrap items-end gap-3 border-t border-line pt-4">
+              <label className="flex flex-col gap-1">Name<input className={input} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="whmcs" /></label>
+              <label className="flex flex-col gap-1">Allowed networks (optional)<input className={input} value={form.cidrs} onChange={(e) => setForm({ ...form, cidrs: e.target.value })} placeholder="203.0.113.10/32" /></label>
+              <label className="flex flex-col gap-1">Webhook URL (optional)<input className={input + " w-72"} value={form.webhook} onChange={(e) => setForm({ ...form, webhook: e.target.value })} placeholder="https://billing.example.com/osriva" /></label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={form.write} onChange={(e) => setForm({ ...form, write: e.target.checked })} /> Can create and change services</label>
+              <Button loading={busy} disabled={!form.name.trim()} onClick={() => void create()}>Create client</Button>
+            </div>
           )}
         </div>
       )}

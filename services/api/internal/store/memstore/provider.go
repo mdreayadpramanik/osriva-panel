@@ -191,6 +191,9 @@ func (s *Store) DeleteNode(_ context.Context, id string) error {
 	if _, ok := s.nodes[id]; !ok {
 		return store.ErrNotFound
 	}
+	if s.planUsesLocked(func(p *store.ServicePlan) bool { return p.NodeID != nil && *p.NodeID == id }) {
+		return store.ErrConflict
+	}
 	for _, v := range s.vps {
 		if v.NodeID == id {
 			return store.ErrConflict
@@ -260,6 +263,9 @@ func (s *Store) DeleteIPPool(_ context.Context, id string) error {
 	if _, ok := s.pools[id]; !ok {
 		return store.ErrNotFound
 	}
+	if s.planUsesLocked(func(p *store.ServicePlan) bool { return p.PoolID == id }) {
+		return store.ErrConflict
+	}
 	for _, v := range s.vps {
 		if v.PoolID == id {
 			return store.ErrConflict
@@ -327,6 +333,9 @@ func (s *Store) DeleteVMTemplate(_ context.Context, id string) error {
 	defer s.mu.Unlock()
 	if _, ok := s.templates[id]; !ok {
 		return store.ErrNotFound
+	}
+	if s.planUsesLocked(func(p *store.ServicePlan) bool { return p.TemplateID == id }) {
+		return store.ErrConflict
 	}
 	delete(s.templates, id)
 	for _, v := range s.vps {

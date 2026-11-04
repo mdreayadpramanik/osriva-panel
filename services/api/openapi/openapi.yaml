@@ -36,6 +36,7 @@ tags:
   - name: agent
   - name: fleet
   - name: provider
+  - name: provisioning
 
 components:
   securitySchemes:
@@ -47,6 +48,16 @@ components:
       type: apiKey
       in: header
       name: X-CSRF-Token
+    signedRequest:
+      type: apiKey
+      in: header
+      name: X-Osriva-Signature
+      description: >-
+        Billing-system API (/provisioning/*). Send X-Osriva-Key, X-Osriva-Timestamp (unix seconds, within 5 minutes),
+        X-Osriva-Nonce (16-64 of [A-Za-z0-9_-], once only) and X-Osriva-Signature =
+        "sha256=" + hex(HMAC-SHA256(secret, METHOD LF PATH?QUERY LF TIMESTAMP LF NONCE LF hex(SHA-256(body)))),
+        where LF is a line feed.
+        PATH is the full request path, e.g. /api/v1/provisioning/services. POST and DELETE also need Idempotency-Key.
   parameters:
     id:
       name: id
@@ -1228,3 +1239,100 @@ paths:
       summary: "{action: start | shutdown | reboot | stop} (provider.write; stop = force off, needs re-auth)"
       responses:
         "202": { description: VPS with the pending operation }
+  /api-clients:
+    get:
+      tags: [provisioning]
+      summary: API clients of billing systems (settings.read); secrets are never returned
+      responses:
+        "200": { description: "`{clients: [{id, name, key_id, scopes, allowed_cidrs, webhook_url, enabled, last_used_at}]}`" }
+    post:
+      tags: [provisioning]
+      summary: "Create an API client (settings.write + re-auth): {name, scopes [provisioning.read, provisioning.write], allowed_cidrs?, webhook_url?}"
+      responses:
+        "201": { description: "`{client, secret}`: the secret is shown once" }
+  /api-clients/{clientId}:
+    parameters: [{ name: clientId, in: path, required: true, schema: { type: string, format: uuid } }]
+    patch:
+      tags: [provisioning]
+      summary: "Enable or disable a client (settings.write + re-auth): {enabled}"
+      responses:
+        "200": { description: Client }
+    delete:
+      tags: [provisioning]
+      summary: Delete a client (settings.write + re-auth); refused while it has provisioned services
+      responses:
+        "204": { description: Deleted }
+  /provider/plans:
+    get:
+      tags: [provisioning]
+      summary: Technical plans (provider.read); no prices, by design
+      responses:
+        "200": { description: "`{plans: [{id, name, kind, template_id, pool_id, node_id, vcpus, memory_mb, disk_gb, enabled}]}`" }
+    post:
+      tags: [provisioning]
+      summary: "Create a VPS plan (provider.write, Provider Mode): {name, template_id, pool_id, node_id?, vcpus, memory_mb, disk_gb}; without node_id the node with the most free memory is used"
+      responses:
+        "201": { description: Plan }
+  /provider/plans/{planId}:
+    parameters: [{ name: planId, in: path, required: true, schema: { type: string, format: uuid } }]
+    delete:
+      tags: [provisioning]
+      summary: Delete a plan (provider.write); existing services keep running
+      responses:
+        "204": { description: Deleted }
+  /provider/provisioned-services:
+    get:
+      tags: [provisioning]
+      summary: Services created by billing systems (provider.read)
+      responses:
+        "200": { description: "`{services: [...]}`" }
+  /provisioning/plans:
+    get:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: Plans available to the billing system (scope provisioning.read)
+      responses:
+        "200": { description: "`{plans: [...]}`" }
+        "401": { description: "invalid_signature or replayed_request" }
+  /provisioning/services:
+    get:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: Look a service up by the billing system's id (scope provisioning.read)
+      parameters:
+        - { name: external_id, in: query, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Service }
+    post:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: >-
+        Provision a service (scope provisioning.write; Idempotency-Key required):
+        {plan_id, external_id, hostname, ssh_keys[1-10]}. A known external_id returns the existing service with 200.
+      responses:
+        "202": { description: "Service: {id, external_id, plan_id, status provisioning, pending, vps_id, hostname, ip_address, last_error}" }
+        "200": { description: The service already exists for this external_id }
+        "409": { description: No capacity, pool exhausted, Provider Mode off, or the idempotency key is in progress }
+        "422": { description: Invalid input or Idempotency-Key reused for a different request }
+  /provisioning/services/{svcId}:
+    parameters: [{ name: svcId, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: "A service: status provisioning | active | suspended | failed | terminating | terminated"
+      responses:
+        "200": { description: Service }
+    delete:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: Terminate (scope provisioning.write; Idempotency-Key required); the VPS and its disk are destroyed, the record stays as terminated
+      responses:
+        "202": { description: Service in state terminating }
+  /provisioning/services/{svcId}/actions:
+    parameters: [{ name: svcId, in: path, required: true, schema: { type: string, format: uuid } }]
+    post:
+      tags: [provisioning]
+      security: [{ signedRequest: [] }]
+      summary: "{action: suspend | unsuspend | reboot} (scope provisioning.write; Idempotency-Key required). Suspend shuts the guest down gracefully and forces it off if it does not stop."
+      responses:
+        "202": { description: Service with the pending operation }

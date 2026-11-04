@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, errorMessage, runTask, type Datacenter, type HVNode, type IPPool, type Rack, type Server, type VMHostInfo, type VMTemplate } from "@/lib/api";
+import { api, errorMessage, runTask, type Datacenter, type HVNode, type IPPool, type Rack, type Server, type ServicePlan, type VMHostInfo, type VMTemplate } from "@/lib/api";
 import { formatBytes } from "@/lib/format";
 import { useSession } from "@/components/session";
 import { Alert, Badge, Button, Card, EmptyState, LoadingBlock, Modal, PageHeader, Table, Td, Th } from "@/components/ui";
@@ -61,7 +61,7 @@ function CreateModal({ title, fields, initial, onClose, onSubmit }: {
   );
 }
 
-type Creating = "datacenter" | "rack" | "node" | "pool" | "template" | null;
+type Creating = "datacenter" | "rack" | "node" | "pool" | "template" | "plan" | null;
 
 export default function InfrastructurePage() {
   const { can, me } = useSession();
@@ -70,6 +70,7 @@ export default function InfrastructurePage() {
   const [nodes, setNodes] = useState<HVNode[]>([]);
   const [pools, setPools] = useState<IPPool[]>([]);
   const [templates, setTemplates] = useState<VMTemplate[]>([]);
+  const [plans, setPlans] = useState<ServicePlan[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -78,12 +79,13 @@ export default function InfrastructurePage() {
 
   const load = useCallback(async () => {
     try {
-      const [d, n, p, t, s] = await Promise.all([
+      const [d, n, p, t, s, pl] = await Promise.all([
         api<{ datacenters: Datacenter[] }>("/provider/datacenters"),
         api<{ nodes: HVNode[] }>("/provider/nodes"),
         api<{ pools: IPPool[] }>("/provider/ip-pools"),
         api<{ templates: VMTemplate[] }>("/provider/templates"),
         api<{ servers: Server[] }>("/servers").catch(() => ({ servers: [] as Server[] })),
+        api<{ plans: ServicePlan[] }>("/provider/plans").catch(() => ({ plans: [] as ServicePlan[] })),
       ]);
       const r = await Promise.all(d.datacenters.map((x) => api<{ racks: Rack[] }>(`/provider/datacenters/${x.id}/racks`)));
       setDcs(d.datacenters);
@@ -92,6 +94,7 @@ export default function InfrastructurePage() {
       setPools(p.pools);
       setTemplates(t.templates);
       setServers(s.servers);
+      setPlans(pl.plans);
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -226,6 +229,25 @@ export default function InfrastructurePage() {
               </Table>
             )}
           </Card>
+
+          <Card title="Plans" description="Technical templates for billing systems: size, image and address pool. No prices, by design; billing stays in your billing system." actions={writable && templates.length > 0 && pools.length > 0 && <Button size="sm" onClick={() => setCreating("plan")}>Add plan</Button>}>
+            {plans.length === 0 ? <p className="text-sm text-muted">No plans yet. Billing systems create VPS from plans through the signed provisioning API (Settings → API clients).</p> : (
+              <Table>
+                <thead><tr><Th>Plan</Th><Th>Size</Th><Th>Image / pool</Th><Th>Node</Th><Th /></tr></thead>
+                <tbody>
+                  {plans.map((p) => (
+                    <tr key={p.id}>
+                      <Td><p className="font-medium">{p.name}</p><p className="font-mono text-[11px] text-muted">{p.id}</p></Td>
+                      <Td className="text-xs">{p.vcpus} vCPU · {p.memory_mb} MB · {p.disk_gb} GB</Td>
+                      <Td className="text-xs">{templates.find((t) => t.id === p.template_id)?.name ?? "?"} · {pools.find((x) => x.id === p.pool_id)?.name ?? "?"}</Td>
+                      <Td className="text-xs">{p.node_id ? nodes.find((n) => n.id === p.node_id)?.server_name ?? "?" : "most free memory"}</Td>
+                      <Td className="text-right">{del(() => void remove(`/provider/plans/${p.id}`, `plan ${p.name}`))}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
         </div>
       )}
 
@@ -276,6 +298,20 @@ export default function InfrastructurePage() {
             { key: "default_user", label: "Default user of the image", placeholder: "ubuntu" },
           ]}
           onSubmit={async (b) => { await api("/provider/templates", { method: "POST", body: b }); await created("Template added."); }} />
+      )}
+      {creating === "plan" && (
+        <CreateModal title="Add plan" onClose={() => setCreating(null)}
+          initial={{ template_id: templates[0]?.id ?? "", pool_id: pools[0]?.id ?? "", node_id: "", vcpus: "1", memory_mb: "1024", disk_gb: String(Math.max(10, templates[0]?.min_disk_gb ?? 10)) }}
+          fields={[
+            { key: "name", label: "Name", placeholder: "vps-small" },
+            { key: "template_id", label: "Template", options: templates.map((t) => ({ value: t.id, label: t.name })) },
+            { key: "pool_id", label: "IP pool", options: pools.map((p) => ({ value: p.id, label: p.name })) },
+            { key: "node_id", label: "Node", options: [{ value: "", label: "Any node (most free memory)" }, ...nodes.map((n) => ({ value: n.id, label: n.server_name }))] },
+            { key: "vcpus", label: "vCPUs", type: "number" },
+            { key: "memory_mb", label: "Memory (MB)", type: "number" },
+            { key: "disk_gb", label: "Disk (GB)", type: "number" },
+          ]}
+          onSubmit={async (b) => { await api("/provider/plans", { method: "POST", body: b }); await created("Plan added."); }} />
       )}
       {host && (
         <Modal open onClose={() => setHost(null)} title={`Host check: ${host.node.server_name}`}>

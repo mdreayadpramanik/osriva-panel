@@ -125,6 +125,7 @@ type Store interface {
 	FleetStore
 	JobStore
 	ProviderStore
+	ProvisioningStore
 
 	Ping(ctx context.Context) error
 	Close()
@@ -775,4 +776,96 @@ type ProviderStore interface {
 	SetVPSState(ctx context.Context, id, state string, pendingTaskID *string, pendingOp, lastError string) error
 	// DeleteVPS removes the VPS and releases its address.
 	DeleteVPS(ctx context.Context, id string) error
+}
+
+// ---- Provisioning API (Phase 11) ----
+
+type APIClient struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	KeyID          string
+	SecretEnc      []byte
+	Scopes         []string
+	AllowedCIDRs   []string
+	WebhookURL     string
+	Enabled        bool
+	CreatedBy      string
+	CreatedAt      time.Time
+	LastUsedAt     *time.Time
+}
+
+type IdempotencyRecord struct {
+	ClientID    string
+	Key         string
+	RequestHash string
+	StatusCode  int // 0 while the first request is in progress
+	Response    []byte
+	CreatedAt   time.Time
+}
+
+type ServicePlan struct {
+	ID             string
+	OrganizationID string
+	Name           string
+	Kind           string
+	TemplateID     string
+	PoolID         string
+	NodeID         *string
+	VCPUs          int
+	MemoryMB       int
+	DiskGB         int
+	Enabled        bool
+	CreatedAt      time.Time
+}
+
+type ProvisionedService struct {
+	ID             string
+	OrganizationID string
+	ClientID       string
+	PlanID         *string
+	ExternalID     string
+	VPSID          *string
+	Status         string // provisioning | active | suspended | failed | terminating | terminated
+	Pending        string
+	LastError      string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+type ProvisioningStore interface {
+	CreateAPIClient(ctx context.Context, c *APIClient) error
+	GetAPIClient(ctx context.Context, id string) (*APIClient, error)
+	GetAPIClientByKey(ctx context.Context, keyID string) (*APIClient, error)
+	ListAPIClients(ctx context.Context, orgID string) ([]APIClient, error)
+	SetAPIClientEnabled(ctx context.Context, id string, enabled bool) error
+	TouchAPIClient(ctx context.Context, id string, at time.Time) error
+	// DeleteAPIClient returns ErrConflict while services provisioned by it exist.
+	DeleteAPIClient(ctx context.Context, id string) error
+
+	// UseNonce records a nonce; ErrConflict when it was already used and has not expired.
+	UseNonce(ctx context.Context, clientID, nonce string, expiresAt, now time.Time) error
+	PruneNonces(ctx context.Context, before time.Time) (int, error)
+
+	// BeginIdempotent stores rec (status 0) unless the key exists; it then returns the existing record.
+	BeginIdempotent(ctx context.Context, rec *IdempotencyRecord) (*IdempotencyRecord, error)
+	FinishIdempotent(ctx context.Context, clientID, key string, status int, response []byte) error
+	DeleteIdempotent(ctx context.Context, clientID, key string) error
+	PruneIdempotency(ctx context.Context, before time.Time) (int, error)
+
+	CreateServicePlan(ctx context.Context, p *ServicePlan) error
+	GetServicePlan(ctx context.Context, id string) (*ServicePlan, error)
+	ListServicePlans(ctx context.Context, orgID string) ([]ServicePlan, error)
+	DeleteServicePlan(ctx context.Context, id string) error
+
+	// CreateProvisionedService returns ErrConflict when the client already used the external id.
+	CreateProvisionedService(ctx context.Context, s *ProvisionedService) error
+	GetProvisionedService(ctx context.Context, id string) (*ProvisionedService, error)
+	GetProvisionedServiceByExternal(ctx context.Context, clientID, externalID string) (*ProvisionedService, error)
+	ListProvisionedServices(ctx context.Context, orgID string) ([]ProvisionedService, error)
+	// ListPendingServices returns services whose operation the reconciler still waits for.
+	ListPendingServices(ctx context.Context, limit int) ([]ProvisionedService, error)
+	UpdateProvisionedService(ctx context.Context, s *ProvisionedService) error
+	// DeleteProvisionedService forgets a service that never got a VPS (creation refused).
+	DeleteProvisionedService(ctx context.Context, id string) error
 }

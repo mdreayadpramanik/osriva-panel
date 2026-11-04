@@ -8,6 +8,8 @@ type Meta struct {
 	RequestID string
 	IP        string
 	UserAgent string
+	// APIClient is the id of the signed API client that made the request, if any.
+	APIClient string
 }
 
 type ctxKey struct{}

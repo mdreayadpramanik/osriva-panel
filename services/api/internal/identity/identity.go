@@ -157,6 +157,14 @@ func (s *Service) audit(ctx context.Context, ev auditEvent) {
 		Action: ev.action, TargetType: ev.targetType, TargetID: ev.targetID, Outcome: ev.outcome,
 		IP: m.IP, UserAgent: truncate(m.UserAgent, 512), RequestID: m.RequestID, Metadata: ev.metadata,
 	}
+	if m.APIClient != "" {
+		md := make(map[string]any, len(ev.metadata)+1)
+		for k, v := range ev.metadata {
+			md[k] = v
+		}
+		md["api_client"] = m.APIClient
+		e.Metadata = md
+	}
 	if ev.actor != nil {
 		org, id := ev.actor.OrganizationID, ev.actor.ID
 		e.OrganizationID, e.ActorUserID, e.ActorLabel = &org, &id, ev.actor.Email
@@ -219,4 +227,31 @@ func (s *Service) RequireRecentReauth(p *Principal) error {
 		return ErrReauthRequired
 	}
 	return nil
+}
+
+// ClientPrincipal is the principal of a signed API client: the creating user's
+// current permissions intersected with the client's granted permissions. The
+// signature is a fresh proof of possession, so it counts as re-authentication.
+func (s *Service) ClientPrincipal(ctx context.Context, userID, clientID string, granted []string) (*Principal, error) {
+	u, err := s.store.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if u.Status != store.UserActive {
+		return nil, ErrForbidden
+	}
+	p, err := s.loadPrincipal(ctx, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	perms := rbac.NewSet()
+	for _, g := range granted {
+		if p.Permissions.Has(g) {
+			perms[g] = struct{}{}
+		}
+	}
+	now := s.now()
+	p.Permissions = perms
+	p.Session = &store.Session{ID: "api-client:" + clientID, UserID: u.ID, ReauthenticatedAt: &now}
+	return p, nil
 }

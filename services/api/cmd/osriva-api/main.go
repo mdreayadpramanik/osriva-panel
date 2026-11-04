@@ -30,6 +30,7 @@ import (
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/logging"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/monitor"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provider"
+	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/provisioning"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/ratelimit"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/rbac"
 	"github.com/mdreayadpramanik/osriva-panel/services/api/internal/secrets"
@@ -228,6 +229,10 @@ func cmdServe() error {
 	fl.UseLessor(lessor)
 	go fl.RunJanitor(ctx, 30*time.Second)
 	prov := provider.New(rt.store, rt.id, fl, rt.log)
+	billing := provisioning.New(rt.store, rt.id, prov, rt.keys, rt.log)
+	billing.UseQueue(queue)
+	billing.UseLessor(lessor)
+	go billing.Run(ctx, 15*time.Second)
 	mon := monitor.New(rt.store, rt.id, rt.keys, rt.log, nil)
 	mon.UseQueue(queue)
 	mon.UseLessor(lessor)
@@ -240,7 +245,7 @@ func cmdServe() error {
 	}
 	rt.log.Info("agent downloads", "dir", rt.cfg.AgentDistDir, "builds", len(dist.Builds()))
 	opts := httpapi.Options{
-		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, AgentDist: dist,
+		Identity: rt.id, Fleet: fl, Monitor: mon, Jobs: queue, Provider: prov, Provisioning: billing, AgentDist: dist,
 		APILimiter: rt.limiter("api", 20, 60), DB: rt.store, Log: rt.log, Version: version,
 		CookieSecure: rt.cfg.CookieSecure, SessionTTL: rt.cfg.SessionTTL, TrustedProxies: rt.cfg.TrustedProxies,
 	}
