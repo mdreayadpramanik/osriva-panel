@@ -87,6 +87,28 @@ func testMonitor(t *testing.T, s store.Store) {
 	if err != nil || found != 1 {
 		t.Fatalf("ListAlertStates: %+v %v", states, err)
 	}
+	// Panel-wide rules keep one state without a server; upserts replace it.
+	if _, err := s.GetAlertState(ctx(), rule.ID, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("no panel-wide state yet: %v", err)
+	}
+	for _, firing := range []bool{true, false} {
+		if err := s.PutAlertState(ctx(), &store.AlertState{RuleID: rule.ID, Firing: firing, Since: now, Value: 30, UpdatedAt: now}); err != nil {
+			t.Fatalf("panel-wide state: %v", err)
+		}
+	}
+	if got, err := s.GetAlertState(ctx(), rule.ID, ""); err != nil || got.ServerID != "" || got.Firing {
+		t.Fatalf("panel-wide state: %+v %v", got, err)
+	}
+	states, _ = s.ListAlertStates(ctx())
+	panelWide := 0
+	for _, x := range states {
+		if x.RuleID == rule.ID && x.ServerID == "" {
+			panelWide++
+		}
+	}
+	if panelWide != 1 {
+		t.Fatalf("panel-wide states: %+v", states)
+	}
 
 	ev := &store.AlertEvent{ID: auth.NewID(), OrganizationID: org, RuleID: &rule.ID, RuleName: rule.Name, ServerID: &a.ID, ServerName: a.Name,
 		Metric: "cpu", State: "firing", Value: 95.5, Threshold: 90}

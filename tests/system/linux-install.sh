@@ -699,6 +699,12 @@ systemctl list-timers --all osriva-backup.timer | grep -q osriva-backup.timer ||
 sudo systemctl start osriva-backup.service # oneshot: returns when the backup is done
 [ "$(sudo readlink -f /var/backups/osriva/latest)" != "$LATEST" ] || fail "the timer's service made no new backup"
 [ "$(count_backups)" -eq 3 ] || fail "the timer's backup did not apply --keep 3"
+# Each successful run is recorded for the "Panel backup missing" alert rule.
+[ "$(pg "SELECT value->>'name' FROM settings WHERE key = 'panel.backup.last_success'")" = "$(basename "$(sudo readlink -f /var/backups/osriva/latest)")" ] || fail "backup not recorded in the panel"
+PB_RULE="$(api POST /alerts/rules '{"name":"ci panel backup","metric":"panel_backup","threshold":26,"duration_minutes":1,"channel_ids":[],"enabled":true}' | jq -r .id)"
+[ -n "$PB_RULE" ] && [ "$PB_RULE" != null ] || fail "panel backup rule"
+! api POST /alerts/rules "$(jq -nc --arg s "$SERVER_ID" '{name:"bad",server_id:$s,metric:"panel_backup",threshold:26,duration_minutes:1,channel_ids:[],enabled:true}')" >/dev/null 2>&1 || fail 'panel backup rule with a server accepted'
+api DELETE "/alerts/rules/$PB_RULE" >/dev/null || fail "delete panel backup rule"
 sudo "$INSTALLER" unschedule-backup
 [ ! -e /etc/systemd/system/osriva-backup.timer ] && [ ! -e /etc/systemd/system/osriva-backup.service ] || fail "timer not removed"
 

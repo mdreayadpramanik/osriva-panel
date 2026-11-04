@@ -37,6 +37,12 @@ const (
 	MetricLoad    = "load"
 	MetricOffline = "offline"
 	MetricBackup  = "backup"
+	// MetricPanelBackup is panel-wide: hours since the control plane's own last
+	// successful backup (`osriva-install.sh backup` records it).
+	MetricPanelBackup = "panel_backup"
+
+	// SettingPanelBackup is written by the installer after a verified backup.
+	SettingPanelBackup = "panel.backup.last_success"
 
 	rollupRetention = 90 * 24 * time.Hour
 	uploadLag       = 45 * time.Second
@@ -311,8 +317,16 @@ func (s *Service) checkRule(ctx context.Context, actor *identity.Principal, r *s
 		}
 	case MetricBackup:
 		r.Threshold = 0.5 // fires when the newest backup failed
+	case MetricPanelBackup:
+		if r.Threshold < 1 || r.Threshold > 720 {
+			return verr("threshold", "must be 1-720 hours without a successful panel backup")
+		}
+		if r.ServerID != nil || r.GroupID != nil {
+			return verr("server_id", "a panel backup rule watches the control plane, not a server or group")
+		}
+		r.DurationMinutes = 1 // not used
 	default:
-		return verr("metric", "must be cpu, memory, disk, load, offline or backup")
+		return verr("metric", "must be cpu, memory, disk, load, offline, backup or panel_backup")
 	}
 	if math.IsNaN(r.Threshold) || math.IsInf(r.Threshold, 0) {
 		return verr("threshold", "must be a number")
@@ -496,6 +510,12 @@ func (s *Service) Evaluate(ctx context.Context, now time.Time) {
 		if !r.Enabled {
 			continue
 		}
+		if r.Metric == MetricPanelBackup {
+			if value, known := s.panelBackupAge(ctx, r, now); known {
+				s.transition(ctx, pass, r, &controlPlane, value, value > r.Threshold, now)
+			}
+			continue
+		}
 		var targets []store.Server
 		if r.ServerID != nil {
 			x, err := s.store.GetServer(ctx, *r.ServerID)
@@ -530,6 +550,33 @@ func (s *Service) Evaluate(ctx context.Context, now time.Time) {
 			s.transition(ctx, pass, r, x, value, value > r.Threshold, now)
 		}
 	}
+}
+
+// controlPlane is the pseudo target of panel-wide rules (no server id).
+var controlPlane = store.Server{Name: "control plane"}
+
+// panelBackupAge returns the hours since the last successful panel backup. A
+// panel that was never backed up counts from the rule's creation, so a new
+// rule gives the first scheduled backup time to run.
+func (s *Service) panelBackupAge(ctx context.Context, r *store.AlertRule, now time.Time) (float64, bool) {
+	last := r.CreatedAt
+	raw, err := s.store.GetSetting(ctx, SettingPanelBackup)
+	switch {
+	case err == nil:
+		var v struct {
+			AtUnix int64 `json:"at_unix"`
+		}
+		if json.Unmarshal(raw, &v) != nil || v.AtUnix <= 0 {
+			s.log.Warn("panel backup status unreadable", "value", string(raw))
+			return 0, false
+		}
+		if t := time.Unix(v.AtUnix, 0); t.After(last) {
+			last = t
+		}
+	case !errors.Is(err, store.ErrNotFound):
+		return 0, false
+	}
+	return math.Max(0, now.Sub(last).Hours()), true
 }
 
 // measure returns the rule's current value for a server; known is false when
@@ -638,6 +685,9 @@ func (s *Service) transition(ctx context.Context, pass *evalPass, r *store.Alert
 	}
 	ev := &store.AlertEvent{ID: auth.NewID(), OrganizationID: r.OrganizationID, RuleID: &r.ID, RuleName: r.Name, ServerID: &x.ID,
 		ServerName: x.Name, Metric: r.Metric, State: state, Value: math.Round(value*10) / 10, Threshold: r.Threshold}
+	if x.ID == "" { // a panel-wide rule
+		ev.ServerID = nil
+	}
 	var channels []store.NotificationChannel
 	for _, id := range r.ChannelIDs {
 		if c, err := s.store.GetChannel(ctx, id); err == nil && c.Enabled {

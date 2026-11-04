@@ -980,7 +980,7 @@ paths:
         "200": { description: "`{rules: [...]}`" }
     post:
       tags: [alerts]
-      summary: Add a rule (alerts.write); metric cpu|memory|disk|load|offline|backup; target server_id, group_id or neither (every server)
+      summary: Add a rule (alerts.write); metric cpu|memory|disk|load|offline|backup|panel_backup; target server_id, group_id or neither (every server; panel_backup always neither, threshold in hours)
       responses:
         "201": { description: Rule }
   /alerts/rules/{ruleId}:

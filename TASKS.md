@@ -197,6 +197,7 @@
 - [ ] Independent audit and penetration test (owner: needs an external firm)
 - [ ] Long-running soak test on real hosts the owner provides
 - [x] Panel backups: `backup --keep N --copy-to DEST` and a daily `schedule-backup` systemd timer (installer); remote SSH copy NOT_TESTED
+- [x] Alert rule "Panel backup missing" (metric panel_backup, hours since the last recorded successful panel backup; migration 0014)
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

@@ -138,8 +138,8 @@ func (s *Store) DeleteAlertRule(ctx context.Context, id string) error {
 
 func (s *Store) GetAlertState(ctx context.Context, ruleID, serverID string) (*store.AlertState, error) {
 	var st store.AlertState
-	err := s.pool.QueryRow(ctx, `SELECT rule_id::text, server_id::text, firing, since, value, updated_at FROM alert_states
-		WHERE rule_id = $1 AND server_id = $2`, ruleID, serverID).Scan(&st.RuleID, &st.ServerID, &st.Firing, &st.Since, &st.Value, &st.UpdatedAt)
+	err := s.pool.QueryRow(ctx, `SELECT rule_id::text, COALESCE(server_id::text, ''), firing, since, value, updated_at FROM alert_states
+		WHERE rule_id = $1 AND server_id IS NOT DISTINCT FROM NULLIF($2, '')::uuid`, ruleID, serverID).Scan(&st.RuleID, &st.ServerID, &st.Firing, &st.Since, &st.Value, &st.UpdatedAt)
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -148,7 +148,7 @@ func (s *Store) GetAlertState(ctx context.Context, ruleID, serverID string) (*st
 
 func (s *Store) PutAlertState(ctx context.Context, st *store.AlertState) error {
 	_, err := s.pool.Exec(ctx, `INSERT INTO alert_states (rule_id, server_id, firing, since, value, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, $4, $5, $6)
 		ON CONFLICT (rule_id, server_id) DO UPDATE SET firing = $3, since = $4, value = $5, updated_at = $6`,
 		st.RuleID, st.ServerID, st.Firing, st.Since, st.Value, st.UpdatedAt)
 	return mapErr(err)
@@ -254,7 +254,7 @@ func (s *Store) GetAlertEvent(ctx context.Context, id string) (*store.AlertEvent
 }
 
 func (s *Store) ListAlertStates(ctx context.Context) ([]store.AlertState, error) {
-	rows, err := s.pool.Query(ctx, `SELECT rule_id::text, server_id::text, firing, since, value, updated_at FROM alert_states`)
+	rows, err := s.pool.Query(ctx, `SELECT rule_id::text, COALESCE(server_id::text, ''), firing, since, value, updated_at FROM alert_states`)
 	if err != nil {
 		return nil, mapErr(err)
 	}

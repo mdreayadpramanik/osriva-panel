@@ -14,6 +14,7 @@ const metricInfo: Record<AlertMetric, { label: string; unit: string; hint: strin
   load: { label: "Load average (1 min)", unit: "", hint: "Average load over the window is above the threshold." },
   offline: { label: "Agent offline", unit: "min", hint: "No report from the agent for longer than the threshold (minutes)." },
   backup: { label: "Backup failed", unit: "", hint: "The newest backup of the server failed or expired." },
+  panel_backup: { label: "Panel backup missing", unit: "h", hint: "No successful backup of the panel itself (osriva-install.sh backup or schedule-backup) for longer than the threshold (hours). Applies to the control plane, not to servers." },
 };
 
 export default function AlertsPage() {
@@ -67,7 +68,7 @@ export default function AlertsPage() {
 
   const writable = can("alerts.write");
   const target = (r: AlertRule) =>
-    r.group_id ? `group ${groups.find((g) => g.id === r.group_id)?.name ?? "?"}` : r.server_id ? servers.find((s) => s.id === r.server_id)?.name ?? "unknown server" : "all servers";
+    r.metric === "panel_backup" ? "control plane" : r.group_id ? `group ${groups.find((g) => g.id === r.group_id)?.name ?? "?"}` : r.server_id ? servers.find((s) => s.id === r.server_id)?.name ?? "unknown server" : "all servers";
   const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? "?";
 
   return (
@@ -144,7 +145,7 @@ export default function AlertsPage() {
                       <Td className="text-xs">
                         {metricInfo[r.metric].label}
                         {r.metric !== "backup" && <> &gt; {r.threshold}{metricInfo[r.metric].unit}</>}
-                        {!["offline", "backup"].includes(r.metric) && <> for {r.duration_minutes} min</>}
+                        {!["offline", "backup", "panel_backup"].includes(r.metric) && <> for {r.duration_minutes} min</>}
                       </Td>
                       <Td className="text-xs">{r.channel_ids.length ? r.channel_ids.map(channelName).join(", ") : <span className="text-muted">history only</span>}</Td>
                       {writable && (
@@ -249,7 +250,8 @@ function RuleForm({ rule, channels, servers, groups, onClose, onSaved }: { rule:
     setBusy(true);
     setError(null);
     const { target, ...rest } = f;
-    const body = { ...rest, server_id: target.startsWith("s:") ? target.slice(2) : null, group_id: target.startsWith("g:") ? target.slice(2) : null };
+    const panel = f.metric === "panel_backup";
+    const body = { ...rest, server_id: !panel && target.startsWith("s:") ? target.slice(2) : null, group_id: !panel && target.startsWith("g:") ? target.slice(2) : null };
     try {
       await (rule ? api(`/alerts/rules/${rule.id}`, { method: "PUT", body }) : api("/alerts/rules", { method: "POST", body }));
       onSaved();
@@ -264,7 +266,7 @@ function RuleForm({ rule, channels, servers, groups, onClose, onSaved }: { rule:
     <Modal open onClose={onClose} title={rule ? "Edit rule" : "Add rule"} footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button loading={busy} disabled={!f.name} onClick={() => void submit()}>Save</Button></>}>
       <div className="flex flex-col gap-3 text-sm">
         <label className="flex flex-col gap-1">Name<input className={inputClass} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="CPU high" /></label>
-        <label className="flex flex-col gap-1">
+        {f.metric !== "panel_backup" && <label className="flex flex-col gap-1">
           Applies to
           <select className={inputClass} value={f.target} onChange={(e) => setF({ ...f, target: e.target.value })}>
             <option value="">All servers</option>
@@ -277,12 +279,12 @@ function RuleForm({ rule, channels, servers, groups, onClose, onSaved }: { rule:
               {servers.map((s) => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
             </optgroup>
           </select>
-        </label>
+        </label>}
         <label className="flex flex-col gap-1">
           Condition
           <select className={inputClass} value={f.metric} onChange={(e) => {
             const m = e.target.value as AlertMetric;
-            setF({ ...f, metric: m, threshold: m === "offline" ? 5 : m === "load" ? 4 : m === "backup" ? 0 : 90 });
+            setF({ ...f, metric: m, threshold: m === "offline" ? 5 : m === "load" ? 4 : m === "backup" ? 0 : m === "panel_backup" ? 26 : 90 });
           }}>
             {(Object.keys(metricInfo) as AlertMetric[]).map((m) => <option key={m} value={m}>{metricInfo[m].label}</option>)}
           </select>
@@ -291,7 +293,7 @@ function RuleForm({ rule, channels, servers, groups, onClose, onSaved }: { rule:
         {f.metric !== "backup" && (
           <div className="flex gap-3">
             <label className="flex flex-col gap-1">Threshold{info.unit && ` (${info.unit})`}<input type="number" className={inputClass + " w-28"} value={f.threshold} onChange={(e) => setF({ ...f, threshold: Number(e.target.value) })} /></label>
-            {f.metric !== "offline" && (
+            {f.metric !== "offline" && f.metric !== "panel_backup" && (
               <label className="flex flex-col gap-1">For (minutes)<input type="number" min={1} className={inputClass + " w-28"} value={f.duration_minutes} onChange={(e) => setF({ ...f, duration_minutes: Number(e.target.value) })} /></label>
             )}
           </div>

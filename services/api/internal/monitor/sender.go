@@ -54,7 +54,7 @@ type WebhookPayload struct {
 	At        string  `json:"at"`
 }
 
-var units = map[string]string{MetricCPU: "%", MetricMemory: "%", MetricDisk: "%", MetricOffline: " min"}
+var units = map[string]string{MetricCPU: "%", MetricMemory: "%", MetricDisk: "%", MetricOffline: " min", MetricPanelBackup: " h"}
 
 // Describe is the one-line human text of an event.
 func Describe(ev *store.AlertEvent) string {
@@ -63,6 +63,10 @@ func Describe(ev *store.AlertEvent) string {
 		return "[OSRIVA] Test notification from OSRIVA Panel."
 	case "resolved":
 		return fmt.Sprintf("[OSRIVA] RESOLVED: %s on %s (%s %.1f%s)", ev.RuleName, ev.ServerName, ev.Metric, ev.Value, units[ev.Metric])
+	}
+	if ev.Metric == MetricPanelBackup {
+		return fmt.Sprintf("[OSRIVA] FIRING: %s: no successful backup of the panel itself for %.1f h (limit %.0f h)",
+			ev.RuleName, ev.Value, ev.Threshold)
 	}
 	if ev.Metric == MetricBackup {
 		return fmt.Sprintf("[OSRIVA] FIRING: %s on %s (the newest backup failed)", ev.RuleName, ev.ServerName)

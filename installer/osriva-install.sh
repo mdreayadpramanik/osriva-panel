@@ -377,6 +377,24 @@ cmd_backup() {
 	do_backup
 	[ -z "$COPY_TO" ] || copy_backup
 	[ -z "$KEEP" ] || prune_backups
+	record_backup_success
+}
+
+# record_backup_success tells the panel (setting panel.backup.last_success) so
+# that a "Panel backup missing" alert rule can notice when backups stop. Only a
+# fully successful run (dump verified, copy done) is recorded.
+record_backup_success() {
+	local name
+	name="$(basename "$LAST_BACKUP")"
+	[[ "$name" =~ $BACKUP_NAME_RE ]] || die "unexpected backup name $name"
+	if compose exec -T postgres psql -q -U osriva -d osriva -v ON_ERROR_STOP=1 -c \
+		"INSERT INTO settings (key, value, updated_at) VALUES ('panel.backup.last_success',
+		 jsonb_build_object('at_unix', extract(epoch FROM now())::bigint, 'name', '$name'), now())
+		 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()" >/dev/null; then
+		ok "recorded in the panel (alert metric: Panel backup missing)"
+	else
+		warn "could not record the backup in the panel; a Panel backup missing alert may fire"
+	fi
 }
 
 UNIT_DIR="/etc/systemd/system"

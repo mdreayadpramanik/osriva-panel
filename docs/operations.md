@@ -49,7 +49,21 @@ sudo ./installer/osriva-install.sh unschedule-backup   # removes the timer, keep
     key fails the run instead of hanging.
   * Old copies at the destination are **not** pruned there; that is the destination's job.
 * **Failures:** a failed scheduled backup shows in `systemctl status osriva-backup.service`
-  and `journalctl -u osriva-backup.service`. OSRIVA does not alert on it yet.
+  and `journalctl -u osriva-backup.service`.
+
+### Alert when panel backups stop
+
+* **Recording:** every fully successful `backup` (dump verified, copy done) is recorded in
+  the panel.
+* **The rule:** add a rule under **Alerts → Add rule → Panel backup missing** with a limit
+  in hours (26 for a daily backup gives two hours of slack). It notifies your channels when
+  no successful backup happened within that time, and resolves after the next one.
+* **What it catches:** a failed backup, a failed copy and a timer that stopped running.
+* **New rules:** a rule created before the first backup counts from its creation time.
+* **What it cannot catch:** the panel itself being down. Use an outside monitor for that,
+  for example an uptime service checking `https://<domain>/api/v1/meta`, or a heartbeat
+  service pinged after each backup (`ExecStartPost=` in a drop-in for
+  `osriva-backup.service`). OSRIVA does not set either up.
 
 The system test runs three backups with `--keep 2 --copy-to <local dir>`, checks the count
 and that the copy is identical, refuses `--keep 0` and an unsafe destination, then creates
