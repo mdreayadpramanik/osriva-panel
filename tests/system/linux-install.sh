@@ -513,7 +513,7 @@ wait_for 180 "delivered on the third attempt" delivered || fail "retried notific
 [ "$(pg "SELECT attempts FROM jobs WHERE kind = 'notification.deliver' AND status = 'succeeded' ORDER BY updated_at DESC LIMIT 1")" = 3 ] || fail "job attempts"
 api GET /jobs | jq -e '.counts.succeeded >= 1' >/dev/null || fail "jobs endpoint"
 kill "$FLAKY_PID" || true
-[ "$(pg "SELECT string_agg(name, ',' ORDER BY name) FROM leases")" = "janitor,monitor" ] || fail "loop leases"
+[ "$(pg "SELECT string_agg(name, ',' ORDER BY name) FROM leases")" = "janitor,monitor,provisioning" ] || fail "loop leases"
 
 # A group used by an alert rule cannot be deleted.
 ! api DELETE "/server-groups/$GROUP_ID" >/dev/null 2>&1 || fail 'deleted a group used by a rule'
