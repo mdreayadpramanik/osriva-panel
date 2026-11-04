@@ -1,10 +1,40 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **12a (Customer Panel, tenant isolation) done** · Next: **Phase 13 (plugin SDK) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
+Last updated: **2026-11-04** · Current phase: **13a (plugin SDK, signed manifests) done** · Next: **Phase 14 (security audit, performance, release) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
 inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API, and give customers their own panel for the VPS they own.
+
+## Phase 13a report (out-of-process plugin SDK, signed manifests)
+
+Design: [ADR-0016](docs/adr/0016-plugins.md); author guide: [docs/plugins.md](docs/plugins.md). Evidence: `CI` run
+41834145603 and `System tests` run 41834145614 (commit `9283fdd`, 2026-11-04, all jobs passed on the first run).
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Apache-2.0 SDK `pkg/pluginsdk`: JSON over stdio protocol v1, `Serve` helper, Ed25519-signed manifests with per-platform SHA-256 | unit tests (tampered version or hash, untrusted key, path outside the plugin directory refused) |
+| `osriva-plugin keygen / sign / verify`; example `chat-notifier` (incoming-webhook format) | CI: key created with mode 0600, plugin signed and verified, `describe` works with an empty environment, appending one line to the binary makes `verify` fail |
+| Registry: plugins only from `OSRIVA_PLUGIN_DIR`, signed by `OSRIVA_PLUGIN_TRUSTED_KEYS`; invalid plugins listed with their reason; symlinked binaries refused | tests on Linux (CI) and Windows 11 (local) |
+| Approval with `settings.write` + re-auth pins the binary hash; checked again before every call; a changed binary stops | tests: unapproved, tampered and disabled plugins never ran |
+| Runner: one process per call, panel environment removed, plugin directory as cwd, 20 s timeout (process group killed on Unix), 1 MiB output cap, secrets only on stdin | tests: `OSRIVA_SECRET_KEY` and the database URL did not reach the plugin, a hanging plugin was killed after 2 s, 2 MiB output and non-JSON answers refused, permanent and retryable errors kept apart |
+| Notification channels of kind `plugin` through the job queue; settings masked for readers; the secret stays out of the audit log | e2e test over HTTP: approve, test notification delivered through the plugin to a receiver, unknown plugin refused, disabled plugin stops |
+| Dashboard: Settings → Plugins (approve, disable, rescan), plugin channel type in Alerts | `tsc` |
+
+### Limitations
+
+* **No OS sandbox:** there is no seccomp, namespace or AppArmor confinement. A plugin has the API user's network and
+  file access, so approve trusted publishers only.
+* **Windows:** on timeout only the plugin process is killed, not its children (no job object).
+* **Extension points:** only notifiers. DNS, backup storage and hosting backends will be plugins later (5b, 7b, 11b).
+* **Distribution:** no marketplace or automatic updates.
+* **Chat services:** delivery through the example plugin to Slack, Mattermost or Rocket.Chat themselves is NOT_TESTED
+  (only the format).
+* **System test:** the Compose stack has no plugin directory mounted, so plugins are not exercised in the system test;
+  the evidence comes from Go tests that start real processes.
+* **Dashboard:** the plugin cards were type-checked, not clicked through in a browser.
 
 ## Phase 12a report (Customer Panel with tenant isolation)
 
@@ -468,5 +498,5 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 11a | Signed provisioning API (HMAC, nonce, idempotency), VPS plans, billing webhooks | ✅ Done |
 | 11b | Web hosting backend adapters (cPanel, Plesk, DirectAdmin …) | Pending (needs licensed test installations) |
 | 12a | Customer Panel: separate accounts and sessions, own VPS only, start / shutdown / reboot | ✅ Done |
-| 13 | Out-of-process plugin SDK, adapter docs | ⏭ Next |
-| 14 | See [TASKS.md](TASKS.md) | Not started |
+| 13a | Out-of-process plugin SDK (Apache-2.0), signed manifests, notifier plugins, adapter docs | ✅ Done (no OS sandbox) |
+| 14 | Security audit, performance and compatibility testing, release | ⏭ Next |

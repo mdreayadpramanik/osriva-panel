@@ -159,6 +159,17 @@
 - [ ] Websites, backups, console and usage graphs in the Customer Panel
 - [ ] Resellers and customer sub-users
 
+## Phase 13a: Plugin SDK (done)
+
+- [x] Apache-2.0 SDK, protocol v1 over stdio, signing tool, example notifier (CI run 41834145603)
+- [x] Signed manifests, trusted keys, approval pinning the binary hash (CI run 41834145603)
+- [x] Contained runner: clean environment, timeout, output limits, secrets on stdin (CI run 41834145603; Windows 11 locally)
+- [x] Plugin notification channels (CI run 41834145603)
+- [ ] OS sandbox for plugins (seccomp / namespaces / a dedicated user)
+- [ ] Windows job objects so plugin children are killed too
+- [ ] DNS, backup-storage and hosting-backend extension points
+- [ ] Plugin directory in the Compose stack and a system-test step
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters

@@ -168,6 +168,6 @@ Agents connect directly to the agent port (8443). Open it in your firewall yours
 
 ## License
 
-AGPL-3.0-only for the platform. Apache-2.0 for the future plugin SDK and API client. See
+AGPL-3.0-only for the platform. Apache-2.0 for the plugin SDK (`pkg/pluginsdk`, see [docs/plugins.md](docs/plugins.md)) and the future API client. See
 [docs/adr/0001-license.md](docs/adr/0001-license.md). OSRIVA Panel contains no billing or
 payment processing and never will.

@@ -191,3 +191,13 @@ None are integrated yet. Each one is added here as its adapter lands (Phases 4bâ
 |---------|--------|------------------|
 | Customer login, own VPS list, start / shutdown / reboot on libvirt/KVM nodes | SUPPORTED | System tests run 41829604752 (commit `82ad26f`) |
 | Customer MFA, password reset by e-mail | UNSUPPORTED | Not implemented; operators issue a new setup link |
+
+## Plugins (Phase 13a)
+
+"CI run 41834145603" is the `CI` workflow at commit `9283fdd` (2026-11-04).
+
+| Platform / plugin | Status | Evidence / notes |
+|-------------------|--------|------------------|
+| Plugin runner on Linux (amd64) | SUPPORTED | CI run 41834145603 (real plugin processes, race detector) |
+| Plugin runner on Windows (amd64) | PARTIALLY_SUPPORTED | Same tests passed on Windows 11 locally; children of a timed-out plugin are not killed |
+| Example chat-notifier â†’ Slack / Mattermost / Rocket.Chat | NOT_TESTED | The incoming-webhook format only; tested against a local receiver |

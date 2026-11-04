@@ -232,5 +232,8 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
 * **Customer Panel (Phase 12a, implemented):** separate customer accounts and sessions
   under `/api/v1/customer` and a `/customer` dashboard, restricted to the VPS a customer
   owns ([ADR-0015](docs/adr/0015-customer-panel.md)).
-* **Adapters/plugins (Phase 13):** out-of-process plugins over gRPC/stdio with a
-  signed manifest, so third-party code never runs inside the Core API process.
+* **Plugins (Phase 13a, implemented):** out-of-process plugins speaking JSON over
+  stdio, one process per call, with Ed25519-signed manifests and operator approval
+  pinning the binary, so third-party code never runs inside the Core API process
+  ([ADR-0016](docs/adr/0016-plugins.md), [docs/plugins.md](docs/plugins.md)). gRPC was
+  not needed. Only notifier plugins exist so far.
