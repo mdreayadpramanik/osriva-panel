@@ -76,8 +76,9 @@ jobs:
             $gomod app -json -licenses -main "$m" -output "dist/$(basename "$m").cdx.json" .
           done
           npm ci --omit=dev --ignore-scripts
-          # Run inside the workspace: the root package has no runtime dependencies of its own.
-          (cd apps/dashboard && npx --yes @cyclonedx/cyclonedx-npm@1.19.3 --omit dev --output-format JSON --output-file ../../dist/osriva-dashboard.cdx.json)
+          # The root package has no runtime dependencies of its own; the lock file and
+          # node_modules live at the root, so select the dashboard workspace from there.
+          npx --yes @cyclonedx/cyclonedx-npm@1.19.3 --workspace @osriva/dashboard --omit dev --output-format JSON --output-file dist/osriva-dashboard.cdx.json
           {
             echo "# Third-party licences in OSRIVA Panel ${VERSION}"
             echo "# Generated from the CycloneDX SBOMs in this release. name<TAB>version<TAB>licence"
