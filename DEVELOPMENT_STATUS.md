@@ -1,10 +1,39 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **14a done, v0.1.0 pre-release published** · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
+Last updated: **2026-11-04** · Current phase: **15a done (production hardening), still a pre-release** · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
 inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API, and give customers their own panel for the VPS they own.
+
+## Phase 15a report (production hardening)
+
+The owner asked to make the panel production-ready. This phase does the parts that need no outside party. The panel
+is **still not production-ready**: the open items below need an independent audit and real hosts. Evidence: `CI` run
+41856202762 and `System tests` run 41856202922 (commit `c3175a7`, all jobs passed); release dry run RELEASE_RUN (SBOMs,
+licence report, signature verified).
+
+### Implemented and tested
+
+| Item | Evidence |
+|------|----------|
+| Verbatim AGPL-3.0 (`LICENSE`) and Apache-2.0 (`pkg/pluginsdk/LICENSE`) texts; the short notices moved to `NOTICE` files | SHA-256 of the downloaded texts matches the files published by gnu.org and apache.org |
+| Go fuzz tests: agent file guard (with a symlink escape), task validation for every type, Git ref/URL, relative path, site/image URL and host-name validators, signed plugin manifests | 30 s per target in every CI run |
+| **Finding fixed:** fuzzing showed that task parameters and `plugin.json` were accepted with trailing data after the first JSON value (e.g. `{}0`). Both now require exactly one value, like the HTTP API already did | regression input kept in `pkg/agenttask/testdata/fuzz` |
+| CycloneDX SBOMs for the agent, API, plugin tool (cyclonedx-gomod 1.9.0) and dashboard (`npm sbom`), and `THIRD_PARTY_LICENSES.tsv`, all covered by the signed `SHA256SUMS` | release dry run: 31 third-party components, every one with a detected licence |
+| Alert evaluation reads each server's samples once per pass, loads every alert state in one query and writes a state only when it is new or flips | contract test for `ListAlertStates`; e2e alert tests; performance (300 servers, 3 rules): first pass 932 → 615 ms, second pass 812 → 105 ms, still 45 of 45 expected alerts |
+| Installer `restore --from DIR`: a chosen backup onto a new installation. It refuses damaged dumps, missing keys and dumps from a newer release (unknown migrations); it takes the backup's secret key over and keeps this host's database password | Ubuntu system test: a different secret key in place, a damaged backup refused, restore, a group created after the backup gone, the enrolled agent back online (agent CA decrypted with the restored key) |
+| **Finding fixed (installer):** two backups within the same second shared one directory, so the safety backup a restore takes first could overwrite the backup being restored (System tests run 41861684109 caught it: the wrong key and data came back). Every backup now gets a new directory | system test: two backups in a row make two directories |
+| Operator guide [docs/operations.md](docs/operations.md): what must never be lost, backups and off-host copies, restore, upgrade, health, host hardening | review |
+
+### Still missing before "production-ready"
+
+* **Independent audit:** a third-party security audit and penetration test (owner decision; needs an external firm).
+* **Soak test:** weeks on real hosts the owner provides, including bridged networking with public addresses for VPS.
+* **Panel backups:** there is no retention and no off-host copy for the panel's own backups yet; the guide makes them
+  the operator's job.
+* **Items needing credentials or servers:** 5b, 7b, 10b and 11b; 6b and 8b are open.
+* **Images:** the GHCR images are still private.
 
 ## Phase 14a report (security audit, performance, compatibility, release dry run)
 
@@ -61,12 +90,12 @@ distributions.
 
 ### Not done / limitations
 
-* **No independent audit:** no third-party audit, penetration test or fuzzing yet.
+* **No independent audit:** no third-party audit or penetration test yet (fuzzing started in Phase 15a).
 * **Release:** on owner request, **v0.1.0 was published as a GitHub pre-release** (Release run 41846227536, tag on
   `b6c6091`). The signature and checksums were verified independently with cosign 2.4.1, and a tampered checksum list
   was refused. That check also showed the documented identity regex failed: `.` escapes did not match on Windows, so
   docs/releasing.md now uses the exact identity. The images are signed but still private on GHCR, and making them
-  public is the owner's choice. SBOM and licence report are missing.
+  public is the owner's choice. SBOMs and a licence report are added in Phase 15a.
 * **Verbatim licence texts:** the AGPL-3.0 and Apache-2.0 texts are still to be added from the official sources (Phase 1
   item).
 * **Remaining items needing owner input:** 5b, 7b, 10b and 11b need credentials or test servers; 6b and 8b are open.

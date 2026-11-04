@@ -21,6 +21,7 @@ production use, an external audit and penetration test are still recommended; se
 | Signed provisioning requests (bad signature, old timestamp, tampered query, replay) | All rejected | `httpapi/provisioning_e2e_test.go` |
 | Agent listener without a client certificate, or with an untrusted one | Rejected | `httpapi/agent_e2e_test.go` |
 | Agent file access outside allowed roots, symlink escape, traversal in archives | Rejected | agent `fsguard` and backup tests |
+| Fuzzing (Phase 15a): file guard, task validation, Git/URL/host validators, signed plugin manifests | **Finding 2 (fixed):** task parameters and `plugin.json` accepted trailing data after the first JSON value (`{}0`), a possible parser differential. Both now require exactly one value. | `CI` job `go`, step "Fuzz the security parsers" |
 
 ## 2. Manual review
 
@@ -57,6 +58,6 @@ production use, an external audit and penetration test are still recommended; se
 ## 4. Not done (recommended before production)
 
 * An independent third-party security audit and penetration test.
-* Fuzzing of the JSON decoders, the agent task validators and the archive extractor.
-* A dependency licence report and an SBOM for release artifacts.
+* Fuzzing of the archive extractor and the agent protocol messages (validators and manifests are fuzzed since 15a).
+* Longer fuzzing campaigns (CI runs 30 s per target).
 * Hardening reviews of the installer on distributions other than Ubuntu 24.04.

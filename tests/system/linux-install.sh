@@ -660,6 +660,10 @@ wait_for 90 "metrics with CPU, memory and load" has_metrics
 step "backup"
 sudo "$INSTALLER" backup
 sudo test -s /var/backups/osriva/latest/database.sql.gz
+# Backups within the same second get their own directories (they used to overwrite each other).
+BEFORE="$(sudo find /var/backups/osriva -mindepth 1 -maxdepth 1 -type d | wc -l)"
+sudo "$INSTALLER" backup >/dev/null && sudo "$INSTALLER" backup >/dev/null
+[ "$(sudo find /var/backups/osriva -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq $((BEFORE + 2)) ] || fail "two backups did not make two directories"
 
 step "restore a chosen backup as on a new host (different secret key; later data is gone)"
 RESTORE_FROM="$(sudo readlink -f /var/backups/osriva/latest)"

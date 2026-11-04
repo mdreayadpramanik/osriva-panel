@@ -185,7 +185,7 @@
 - [x] Batch the alert evaluation queries (done in 15a)
 - [ ] Installer and tasks on distributions other than Ubuntu 24.04
 
-## Phase 15a: Production hardening (in progress)
+## Phase 15a: Production hardening (done; CI run 41856202762, System tests run 41856202922)
 
 - [x] Verbatim AGPL-3.0 and Apache-2.0 texts; notices moved to NOTICE files
 - [x] Go fuzz tests: file guard, task validation, git/URL/host validators, signed plugin manifests (run in CI)

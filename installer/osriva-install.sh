@@ -292,8 +292,16 @@ do_verify() {
 do_backup() {
 	local ts dir
 	ts="$(date -u +%Y%m%dT%H%M%SZ)"
+	install -d -m 0700 "$BACKUP_DIR"
+	# Never reuse a directory: two backups within one second (e.g. the safety
+	# backup a restore takes) must not overwrite each other.
 	dir="$BACKUP_DIR/$ts"
-	install -d -m 0700 "$dir"
+	local n=1
+	until mkdir -m 0700 "$dir" 2>/dev/null; do
+		n=$((n + 1))
+		[ "$n" -le 100 ] || die "cannot create a new backup directory in $BACKUP_DIR"
+		dir="$BACKUP_DIR/$ts-$n"
+	done
 	info "Backing up to $dir"
 	compose exec -T postgres pg_dump -U osriva -d osriva --no-owner | gzip >"$dir/database.sql.gz"
 	gzip -t "$dir/database.sql.gz"
