@@ -184,3 +184,10 @@ None are integrated yet. Each one is added here as its adapter lands (Phases 4bâ
 | Any HTTP client that signs requests as documented (tested with curl + openssl) | SUPPORTED | System tests run 41800723205 |
 | WHMCS, Blesta, HostBill | UNSUPPORTED | No module yet; the signed API is documented in OpenAPI |
 | cPanel/WHM, Plesk, DirectAdmin, ISPConfig as hosting backends | UNSUPPORTED | Phase 11b (needs licensed test installations) |
+
+## Customer Panel (Phase 12a)
+
+| Feature | Status | Evidence / notes |
+|---------|--------|------------------|
+| Customer login, own VPS list, start / shutdown / reboot on libvirt/KVM nodes | SUPPORTED | System tests run 41829604752 (commit `82ad26f`) |
+| Customer MFA, password reset by e-mail | UNSUPPORTED | Not implemented; operators issue a new setup link |

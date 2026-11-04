@@ -229,5 +229,8 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
   with HMAC-signed requests and receive signed webhooks; services are created from
   technical plans through the Provider Mode code path
   ([ADR-0014](docs/adr/0014-provisioning-api.md)).
+* **Customer Panel (Phase 12a, implemented):** separate customer accounts and sessions
+  under `/api/v1/customer` and a `/customer` dashboard, restricted to the VPS a customer
+  owns ([ADR-0015](docs/adr/0015-customer-panel.md)).
 * **Adapters/plugins (Phase 13):** out-of-process plugins over gRPC/stdio with a
   signed manifest, so third-party code never runs inside the Core API process.

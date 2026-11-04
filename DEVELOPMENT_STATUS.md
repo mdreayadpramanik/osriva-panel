@@ -1,10 +1,38 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **11a (signed provisioning API, plans, billing webhooks) done** · Next: **Phase 12 (Customer Panel) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
+Last updated: **2026-11-04** · Current phase: **12a (Customer Panel, tenant isolation) done** · Next: **Phase 13 (plugin SDK) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API, and give customers their own panel for the VPS they own.
+
+## Phase 12a report (Customer Panel with tenant isolation)
+
+Design: [ADR-0015](docs/adr/0015-customer-panel.md). Evidence: `System tests` run 41829604752 and `CI` run 41829604759
+(commit `82ad26f`, 2026-11-04, all jobs passed on the first run). The browser check found a real bug before CI: in
+development React runs effects twice, so the setup page threw the one-time token away on the second run; it now only
+reads a non-empty URL fragment.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Customers are separate accounts (not users, no permissions); one-time setup link (72 h, token only in the URL fragment); Argon2id passwords; login limited per IP with a lockout per address | store contract (memory + PostgreSQL 17: expired, reused and unknown tokens refused); e2e test; Ubuntu CI: setup 204, the same link again 409 |
+| Separate session table and cookie `osriva_customer` (HttpOnly, SameSite=Strict, Path=/api/v1/customer) with its own CSRF token | e2e test (cookie attributes, CSRF 403); browser on Windows 11 (cookie not readable by scripts); Ubuntu CI (cookie path) |
+| No crossover: customer cookie or token on operator endpoints, and operator cookie or token on the customer API, all give 401 | e2e test (four combinations); Ubuntu CI (both directions); browser: an operator page redirects a signed-in customer to the operator login |
+| Ownership: every customer query filters by customer id; another customer's VPS or an unassigned one answers 404; the customer view hides node, pool, task and internal errors | store contract, e2e test; Ubuntu CI (`node_id` absent) |
+| Customers may start, shut down and reboot their own VPS; force stop refused; a suspended billing service cannot be started; actions audited with the customer | e2e test; Ubuntu CI under KVM: the customer rebooted the billed VPS, audit entry found |
+| Password change signs out other sessions; disabling a customer signs out everywhere | e2e test |
+| Operators: `customers.read` / `customers.write`, new setup link (re-auth), VPS assignment; billing API `customer_email` | e2e test; Ubuntu CI (billed VPS appeared in the customer's list) |
+| Dashboard: Customers page, owner column on the VPS page, separate `/customer` panel (login, setup, servers, password) | `tsc`; browser: setup link → password → login → "Your servers" |
+
+### Limitations
+
+* **Customer accounts:** no MFA and no self-service password reset by e-mail; the operator issues a new setup link.
+* **Panel scope:** customers see VPS only, not websites, backups, consoles or usage graphs.
+* **Organizations:** one organization; no resellers or sub-users.
+* **Browser check:** the Customers page and VPS assignment were type-checked, and assignment is tested through the
+  API; they were not clicked through in a browser this phase.
 
 ## Phase 11a report (signed provisioning API, technical plans, billing webhooks)
 
@@ -439,5 +467,6 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 10b | Proxmox VE adapter, more hypervisors | Pending (needs a Proxmox test server) |
 | 11a | Signed provisioning API (HMAC, nonce, idempotency), VPS plans, billing webhooks | ✅ Done |
 | 11b | Web hosting backend adapters (cPanel, Plesk, DirectAdmin …) | Pending (needs licensed test installations) |
-| 12 | Customer Panel with tenant isolation | ⏭ Next |
-| 13–14 | See [TASKS.md](TASKS.md) | Not started |
+| 12a | Customer Panel: separate accounts and sessions, own VPS only, start / shutdown / reboot | ✅ Done |
+| 13 | Out-of-process plugin SDK, adapter docs | ⏭ Next |
+| 14 | See [TASKS.md](TASKS.md) | Not started |

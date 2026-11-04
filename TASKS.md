@@ -150,6 +150,15 @@
 - [ ] Shared hosting, e-mail and DNS products in plans
 - [ ] Generated API client from the OpenAPI spec (`packages/api-client`)
 
+## Phase 12a: Customer Panel (done)
+
+- [x] Customer accounts separate from operators; one-time setup links; login with rate limit and lockout (System tests run 41829604752)
+- [x] Separate sessions, cookie path and CSRF; no crossover with operator sessions (System tests run 41829604752)
+- [x] Customers see and start, shut down, reboot only their own VPS; suspended services stay off (System tests run 41829604752)
+- [ ] Customer MFA and password reset by e-mail
+- [ ] Websites, backups, console and usage graphs in the Customer Panel
+- [ ] Resellers and customer sub-users
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters
