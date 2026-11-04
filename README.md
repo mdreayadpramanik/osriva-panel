@@ -8,16 +8,18 @@ websites, CMSs, applications and hosting infrastructure from the browser. It has
 operating modes, **Personal Server Mode** and **Hosting Provider Mode**, plus a separate
 **Customer Panel**. It has no paid editions, no license keys and no billing.
 
-> **Status: early development (Phase 3 of 14 done).** What works today: authentication,
-> sessions, TOTP two-factor, role-based access control, user management, the audit log,
-> panel settings, a **Linux installer** (with upgrade and rollback), and **connecting servers**:
-> a one-line command installs the OSRIVA Agent as a service; it enrols securely and reports
-> each server's real OS, hardware, storage and network, plus a compatibility assessment.
-> **Live metrics**, **logs**, the **process list**, **service control**, a confined **file manager**,
-> **SSH key** management and host settings (hostname, timezone) work too.
-> Deployment, CMS, Docker, databases, backups, alerting and
-> provider features **do not exist yet**. See [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
-> OSRIVA Panel is **not production-ready**.
+> **Status: pre-release (v0.1.0; all 14 phases have a first part, plus production hardening).**
+> Servers are connected through the OSRIVA Agent and managed from the browser:
+> * **Basics:** metrics, logs, services, processes, files, SSH keys and host settings.
+> * **Apps and sites:** Docker, Git deployments, websites behind Caddy with automatic HTTPS, WordPress.
+> * **Data and alerts:** encrypted backups with restore, and alerts by webhook, e-mail or plugin.
+> * **Fleet:** server groups and batches.
+> * **Hosting Provider Mode:** KVM VPS, a signed billing API and a Customer Panel.
+> * **Panel installer:** backup, restore, upgrade and rollback of the panel itself.
+>
+> Exactly what is tested, and what is not, is in [DEVELOPMENT_STATUS.md](DEVELOPMENT_STATUS.md).
+> Before running it for customers, work through [docs/production-checklist.md](docs/production-checklist.md)
+> (a soak test on real hosts and an independent security review).
 
 ## Repository
 

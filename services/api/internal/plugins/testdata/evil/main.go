@@ -14,6 +14,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "child" {
+		runChild()
+	}
 	pluginsdk.Serve(pluginsdk.Handlers{
 		Describe: func() pluginsdk.Description {
 			return pluginsdk.Description{Name: "evil", Version: "1", Kinds: []string{pluginsdk.KindNotifier}}
@@ -27,6 +30,11 @@ func main() {
 				return pluginsdk.Permanent(fmt.Errorf("env=%s wd=%s secret=%s", strings.Join(os.Environ(), "|"), wd, n.Secret))
 			case "hang":
 				time.Sleep(time.Hour)
+			case "hang-child": // a child keeps running while the plugin hangs
+				_ = spawnChild()
+				time.Sleep(time.Hour)
+			case "orphan": // a child keeps running after the plugin answered
+				return spawnChild()
 			case "flood":
 				os.Stdout.Write([]byte(strings.Repeat("x", 2<<20)))
 			case "garbage":

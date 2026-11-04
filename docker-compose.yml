@@ -40,6 +40,10 @@ services:
       OSRIVA_PUBLIC_URL: ${OSRIVA_PUBLIC_URL:-}
       OSRIVA_AGENT_ADDR: ${OSRIVA_AGENT_ADDR:-}
       OSRIVA_AGENT_PUBLIC_URL: ${OSRIVA_AGENT_PUBLIC_URL:-}
+      # Plugins (docs/plugins.md): set OSRIVA_PLUGIN_TRUSTED_KEYS in .env to enable them; the
+      # directory /etc/osriva/plugins (OSRIVA_PLUGIN_HOST_DIR) is mounted read-only at /plugins.
+      OSRIVA_PLUGIN_DIR: ${OSRIVA_PLUGIN_TRUSTED_KEYS:+/plugins}
+      OSRIVA_PLUGIN_TRUSTED_KEYS: ${OSRIVA_PLUGIN_TRUSTED_KEYS:-}
     depends_on:
       postgres: { condition: service_healthy }
     networks: [internal]
@@ -59,6 +63,8 @@ services:
     # Only port 8443 is published; the HTTP API (8080) stays reachable only via Caddy.
     ports:
       - "8443:8443"
+    volumes:
+      - ${OSRIVA_PLUGIN_HOST_DIR:-/etc/osriva/plugins}:/plugins:ro
     networks: [internal, public]
     # distroless has no shell/curl; readiness is checked by Caddy upstream + `docker compose logs`.
 

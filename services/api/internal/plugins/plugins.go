@@ -306,10 +306,17 @@ func (r *Registry) exec(ctx context.Context, e *Entry, req []byte) (json.RawMess
 	stdout := &capped{max: maxStdout}
 	stderr := &capped{max: maxStderr}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
-	isolate(cmd)
+	started, done := isolate(cmd)
+	defer done()
 	cmd.WaitDelay = 2 * time.Second
 	start := time.Now()
-	err := cmd.Run()
+	err := cmd.Start()
+	if err == nil {
+		if serr := started(); serr != nil {
+			r.log.Warn("plugin isolation incomplete", "plugin", e.Name, "err", serr)
+		}
+		err = cmd.Wait()
+	}
 	if s := strings.TrimSpace(stderr.String()); s != "" {
 		r.log.Info("plugin stderr", "plugin", e.Name, "stderr", s)
 	}

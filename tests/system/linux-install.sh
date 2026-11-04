@@ -483,6 +483,33 @@ wait_for 60 "hourly rollup" has_rollup || fail "rollup not written"
 wait_for 90 "server online again" is_online || fail "agent did not reconnect"
 sudo docker rm -f ci-mail >/dev/null
 
+step "Plugins: a signed notifier mounted into the API container, approved, delivering; a changed binary stops"
+sudo test -d /etc/osriva/plugins || fail "the installer did not create /etc/osriva/plugins"
+api GET /plugins | jq -e '.enabled == false' >/dev/null || fail "plugins enabled without trusted keys"
+PL="$(mktemp -d)"; mkdir -p "$PL/chat-notifier"
+(cd "$ROOT" && CGO_ENABLED=0 go build -o "$PL/osriva-plugin" ./pkg/pluginsdk/cmd/osriva-plugin &&
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$PL/chat-notifier/chat-notifier" ./pkg/pluginsdk/examples/chat-notifier)
+printf '{"name":"chat-notifier","version":"0.1.0","publisher":"ci","description":"system test","protocol":1,"kinds":["notifier"],"executables":{"linux/amd64":{"path":"chat-notifier","sha256":"%064d"}}}' 0 >"$PL/chat-notifier/plugin.json"
+PUB="$("$PL/osriva-plugin" keygen --out "$PL/publisher.key" | awk '/public key/ {print $3}')"
+"$PL/osriva-plugin" sign --key "$PL/publisher.key" "$PL/chat-notifier"
+sudo cp -r "$PL/chat-notifier" /etc/osriva/plugins/
+sudo chown -R root:root /etc/osriva/plugins/chat-notifier
+echo "OSRIVA_PLUGIN_TRUSTED_KEYS=$PUB" | sudo tee -a /etc/osriva/osriva.env >/dev/null
+sudo "$INSTALLER" repair --yes >/dev/null
+login
+api GET /plugins | jq -e '.enabled and ([.plugins[] | select(.name == "chat-notifier" and .valid and (.enabled | not))] | length == 1)' >/dev/null || fail "plugin not listed as valid"
+api POST /auth/reauth "$(jq -nc --arg p "$PASSWORD" '{password:$p}')" >/dev/null || fail "re-auth"
+api PUT /plugins/chat-notifier '{"enabled":true}' | jq -e '.runnable' >/dev/null || fail "approve plugin"
+PC_ID="$(api POST /alerts/channels "$(jq -nc --arg u "http://$GW:18099/hook/PLUGIN" '{name:"ci plugin",kind:"plugin",enabled:true,config:{plugin:"chat-notifier",settings:{url:$u}}}')" | jq -r .channel.id)"
+api POST "/alerts/channels/$PC_ID/test" | jq -e '.delivered == 1' >/dev/null || fail "plugin test delivery"
+jq -se '[.[] | select(.path == "/hook/PLUGIN") | .body | @base64d | fromjson | .text | select(contains("Test notification"))] | length == 1' "$HOOKS" >/dev/null || fail "the plugin's message did not arrive"
+# One byte appended to the approved binary: it must not run any more.
+echo x | sudo tee -a /etc/osriva/plugins/chat-notifier/chat-notifier >/dev/null
+api POST /plugins/rescan >/dev/null
+! api POST "/alerts/channels/$PC_ID/test" 2>/dev/null | jq -e '.delivered == 1' >/dev/null || fail 'a changed plugin binary still ran'
+api DELETE "/alerts/channels/$PC_ID" >/dev/null
+kill "$HOOK_PID" 2>/dev/null || true
+
 step "Fleet: server groups, a batch across the group, queued notification retries, leases"
 login
 PENDING_ID="$(api POST /servers '{"name":"ci-pending"}' | jq -r .server.id)"

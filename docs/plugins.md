@@ -119,9 +119,14 @@ a binary or any field breaks it.
 ## 4. Installing a plugin (operators)
 
 1. Copy the plugin directory into `OSRIVA_PLUGIN_DIR`, which only the operator may write.
+   With the installer (Docker Compose) that is `/etc/osriva/plugins` on the host,
+   owned by root and mounted read-only into the API container. The container has
+   no libc, so plugin binaries must be static (for Go: `CGO_ENABLED=0`).
 2. Set `OSRIVA_PLUGIN_TRUSTED_KEYS` to the publisher's public key; several keys are
-   separated by commas. Restart the API, or use **Settings → Plugins → Rescan
-   directory**.
+   separated by commas. With the installer, add the line
+   `OSRIVA_PLUGIN_TRUSTED_KEYS=<key>` to `/etc/osriva/osriva.env` and run
+   `sudo ./installer/osriva-install.sh repair`. Later plugins only need **Settings →
+   Plugins → Rescan directory**.
 3. In **Settings → Plugins** the plugin shows as valid, with its key id. If it does not,
    the reason is shown: untrusted key, bad signature, binary mismatch or wrong platform.
 4. Click **Approve**. This needs re-authentication and pins the binary's SHA-256.
@@ -139,9 +144,15 @@ approved again.
   * unsigned, untrusted, changed or unapproved plugins never run.
 
   These are tested in `services/api/internal/plugins`, on Linux in CI and on Windows 11
-  locally.
+  locally. The Linux system test installs a signed plugin into the Compose stack,
+  approves it, delivers a notification through it and checks that a changed binary
+  stops running.
 * **Not contained:** there is no OS sandbox (seccomp, namespaces, AppArmor). A plugin can
   use the network and read whatever the API's user can read. Approve only plugins whose
   publisher you trust.
-* **Not covered:** the `isolate` process-group kill applies on Linux and other Unix
-  systems; on Windows only the plugin process itself is killed on timeout.
+* **Child processes:**
+  * on Unix the plugin runs in its own process group, which is killed on timeout;
+    children that outlive a plugin that answered in time are not killed;
+  * on Windows the plugin runs in a job object that is terminated on timeout and closed
+    after every call, so its children die with it. A child started in the instant before
+    the process joins the job could escape.

@@ -17,6 +17,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6 # builds the example plugin and its signing tool
+        with:
+          go-version-file: go.mod
       - name: Install, enrol, upgrade, rollback, revoke, uninstall
         run: bash tests/system/linux-install.sh
       - name: Diagnostics
@@ -37,3 +40,5 @@ jobs:
       - name: Agent as a Windows service via the one-line installer
         shell: powershell
         run: ./tests/system/windows-agent.ps1
+      - name: Plugin containment on Windows (job object kills children)
+        run: go test -count=1 ./services/api/internal/plugins/...

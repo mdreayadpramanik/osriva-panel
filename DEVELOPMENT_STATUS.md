@@ -27,6 +27,9 @@ licence report, signature verified).
 | Panel backups: `backup --keep N` (prunes only backup-named directories, never `latest`), `--copy-to /dir` or `user@host:/dir` (rsync; strict value check), `schedule-backup --at HH:MM` / `unschedule-backup` (systemd timer, `Persistent=true`). Releases now include the installer, which the timer runs | System tests run 41874712974: three backups with `--keep 2` leave two, the local copy is byte-identical and keeps all three, `--keep 0` and `/tmp/x;reboot` refused, the timer's service makes a backup and applies `--keep 3`, unschedule removes both units. SSH copy NOT_TESTED |
 | Alert rule **Panel backup missing** (`panel_backup`): hours since the last successful panel backup, which the installer records after every fully successful `backup`; panel-wide state without a server (migration 0014, `UNIQUE NULLS NOT DISTINCT`) | e2e test: limit 1-720 h, no server or group allowed, no alert before the limit for a new rule, one firing e-mail after it, no duplicate, resolved after a recorded backup, unreadable status ignored; store contract on PostgreSQL; System tests run 41874712974: the timer's run is recorded, rule accepted, rule with a server refused |
 | **Finding fixed (installer, found in review):** `rollback` restored whatever `latest` pointed to. With scheduled backups that is soon a dump taken *after* the upgrade, with the new release's schema, which the previous release would have started against. `upgrade` now keeps its backup as `pre-upgrade`; rollback uses it, refuses dumps with unknown migrations, and `--keep` never prunes it. Changing installer runs now take a lock (`flock`), so a scheduled backup waits for an upgrade or restore | System tests run 41883043217 (CI 41883043173): a group created and a backup taken after the upgrade, while another run held the lock (the backup waited); `--keep 1` kept `pre-upgrade`; rollback removed the group |
+| Fuzzing of the backup archive extractor (`FuzzExtract`: traversal, absolute names, symlinks with files through them, duplicates): nothing lands outside the target | 30 s in every CI run |
+| Plugins: Windows job object with "kill on close", so children die on timeout and after every call; `/etc/osriva/plugins` created by the installer and mounted read-only into the API container; plugin tests on the Windows CI runner | Windows 11 locally: test passes, and fails with the job assignment disabled ("child is still running"); System tests run SYSTEM_RUN3: signed chat-notifier installed, listed valid, approved after re-auth, test notification delivered through it to a receiver, one appended byte stops it |
+| Owner checklist [docs/production-checklist.md](docs/production-checklist.md): soak test with pass criteria, independent review, decisions, optional credentials | review |
 | Operator guide [docs/operations.md](docs/operations.md): what must never be lost, backups and off-host copies, restore, upgrade, health, host hardening | review |
 
 ### Still missing before "production-ready"
@@ -125,13 +128,13 @@ Design: [ADR-0016](docs/adr/0016-plugins.md); author guide: [docs/plugins.md](do
 
 * **No OS sandbox:** there is no seccomp, namespace or AppArmor confinement. A plugin has the API user's network and
   file access, so approve trusted publishers only.
-* **Windows:** on timeout only the plugin process is killed, not its children (no job object).
+* **Windows:** since 15a a job object kills the plugin's children on timeout and after each call (see the Phase 15a report).
 * **Extension points:** only notifiers. DNS, backup storage and hosting backends will be plugins later (5b, 7b, 11b).
 * **Distribution:** no marketplace or automatic updates.
 * **Chat services:** delivery through the example plugin to Slack, Mattermost or Rocket.Chat themselves is NOT_TESTED
   (only the format).
-* **System test:** the Compose stack has no plugin directory mounted, so plugins are not exercised in the system test;
-  the evidence comes from Go tests that start real processes.
+* **System test:** since 15a the Compose stack mounts `/etc/osriva/plugins` and the system test delivers through a signed
+  plugin (see the Phase 15a report).
 * **Dashboard:** the plugin cards were type-checked, not clicked through in a browser.
 
 ## Phase 12a report (Customer Panel with tenant isolation)

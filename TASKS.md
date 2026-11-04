@@ -167,9 +167,9 @@
 - [x] Contained runner: clean environment, timeout, output limits, secrets on stdin (CI run 41834145603; Windows 11 locally)
 - [x] Plugin notification channels (CI run 41834145603)
 - [ ] OS sandbox for plugins (seccomp / namespaces / a dedicated user)
-- [ ] Windows job objects so plugin children are killed too
+- [x] Windows job objects so plugin children are killed too (15a)
 - [ ] DNS, backup-storage and hosting-backend extension points
-- [ ] Plugin directory in the Compose stack and a system-test step
+- [x] Plugin directory in the Compose stack and a system-test step (15a)
 
 ## Phase 14a: Audit, performance, compatibility, release (done)
 
@@ -198,6 +198,9 @@
 - [ ] Long-running soak test on real hosts the owner provides
 - [x] Panel backups: `backup --keep N --copy-to DEST` and a daily `schedule-backup` systemd timer (installer); remote SSH copy NOT_TESTED
 - [x] Alert rule "Panel backup missing" (metric panel_backup, hours since the last recorded successful panel backup; migration 0014) (CI 41874713110, System tests 41874712974)
+- [x] Fuzzing of the backup archive extractor (FuzzExtract, in CI)
+- [x] Plugins: Windows job object (children killed on timeout and after each call); /etc/osriva/plugins mounted in the Compose stack; system test delivers through a signed plugin; plugin tests run on the Windows CI runner
+- [x] Owner checklist docs/production-checklist.md (soak test, independent review, decisions)
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

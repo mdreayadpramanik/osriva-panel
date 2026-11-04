@@ -53,6 +53,7 @@ jobs:
           done
           go test ./pkg/pluginsdk -run '^$' -fuzz '^FuzzManifestSignature$' -fuzztime 30s
           go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzGuardCheck$' -fuzztime 30s
+          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzExtract$' -fuzztime 30s
       - name: Performance on PostgreSQL 17 (300 servers)
         run: OSRIVA_PERF=1 OSRIVA_PERF_OUT="$PWD/perf.json" go test -count=1 -run TestPerformance -v ./services/api/internal/store/postgres/
       - uses: actions/upload-artifact@v4

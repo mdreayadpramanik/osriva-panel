@@ -190,8 +190,16 @@ ensure_docker() {
 }
 
 # ---------- release management ----------
+# ensure_plugin_dir creates the plugin directory the API mounts read-only (only
+# root may write it; plugins stay disabled until OSRIVA_PLUGIN_TRUSTED_KEYS is set).
+ensure_plugin_dir() {
+	install -d -m 0700 "$CONF_DIR"
+	install -d -m 0755 "$CONF_DIR/plugins"
+}
+
 new_release() {
 	local id dest
+	ensure_plugin_dir
 	id="$(date -u +%Y%m%dT%H%M%SZ)"
 	dest="$PREFIX/releases/$id"
 	mkdir -p "$dest"
@@ -480,6 +488,7 @@ cmd_plan() {
 	info "Plan"
 	docker_plan_line
 	echo "  - copy the OSRIVA source from $SOURCE to $PREFIX/releases/<timestamp> and link $PREFIX/current"
+	echo "  - create $CONF_DIR/plugins (empty; plugins stay off until OSRIVA_PLUGIN_TRUSTED_KEYS is set)"
 	[ -f "$ENV_FILE" ] && echo "  - keep existing $ENV_FILE" || echo "  - create $ENV_FILE (mode 0600) with a new secret key and database password"
 	echo "  - build and start containers with Docker Compose (project '$PROJECT'): postgres, migrate, api, dashboard, caddy"
 	echo "  - publish ports 80, 443$([ "$ENABLE_AGENT" -eq 1 ] && echo ", 8443 (agent endpoint)") on this host; PostgreSQL stays internal"
@@ -633,6 +642,7 @@ cmd_restore() {
 
 cmd_repair() {
 	[ -L "$PREFIX/current" ] || die "not installed"
+	ensure_plugin_dir
 	confirm "Rebuild and recreate all containers of the current release?" || die "aborted"
 	compose up -d --build --force-recreate
 	wait_ready || die "API did not become ready"

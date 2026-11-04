@@ -202,4 +202,40 @@ func TestRunnerContainsPlugins(t *testing.T) {
 	if d := time.Since(start); d > 8*time.Second {
 		t.Fatalf("a hanging plugin was not killed in time: %v", d)
 	}
+
+	// Children: a hanging plugin's child dies with it (process group on Unix,
+	// job object on Windows); on Windows a child left behind by a plugin that
+	// answered dies when the call ends.
+	beat := filepath.Join(e.root, "evil", "heartbeat")
+	beating := func() bool {
+		a, err := os.Stat(beat)
+		if err != nil {
+			return false
+		}
+		time.Sleep(600 * time.Millisecond)
+		b, err := os.Stat(beat)
+		return err == nil && b.Size() > a.Size()
+	}
+	gone := func(what string) {
+		t.Helper()
+		for i := 0; i < 10; i++ {
+			if !beating() {
+				return
+			}
+		}
+		t.Fatalf("%s: the plugin's child is still running", what)
+	}
+	if err := call("hang-child", ""); !errors.As(err, &ce) || ce.Code != "timeout" {
+		t.Fatalf("hang-child: %v", err)
+	}
+	if _, err := os.Stat(beat); err != nil {
+		t.Fatalf("hang-child never started its child: %v", err)
+	}
+	gone("timeout")
+	if runtime.GOOS == "windows" {
+		if err := call("orphan", ""); err != nil {
+			t.Fatalf("orphan: %v", err)
+		}
+		gone("after a successful call")
+	}
 }
