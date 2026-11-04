@@ -174,3 +174,13 @@ None are integrated yet. Each one is added here as its adapter lands (Phases 4bâ
 | Proxmox VE | UNSUPPORTED | Phase 10b (needs a test server) |
 | OpenStack, CloudStack, vSphere | UNSUPPORTED | Not implemented |
 | Nodes on Windows, BSD, macOS | UNSUPPORTED | `vm.host` reports the reason (checked on Windows 11) |
+
+## Provisioning API (Phase 11a)
+
+"System tests run 41800723205" is the `System tests` workflow at commit `749d022` (2026-11-04).
+
+| Integration | Status | Evidence / notes |
+|-------------|--------|------------------|
+| Any HTTP client that signs requests as documented (tested with curl + openssl) | SUPPORTED | System tests run 41800723205 |
+| WHMCS, Blesta, HostBill | UNSUPPORTED | No module yet; the signed API is documented in OpenAPI |
+| cPanel/WHM, Plesk, DirectAdmin, ISPConfig as hosting backends | UNSUPPORTED | Phase 11b (needs licensed test installations) |

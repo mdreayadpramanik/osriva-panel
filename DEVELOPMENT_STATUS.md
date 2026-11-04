@@ -1,10 +1,38 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **10a (Provider Mode, libvirt/KVM VPS) done** · Next: **Phase 11 (hosting backends, provisioning API) or the pending 5b / 6b / 7b / 8b / 10b items**
+Last updated: **2026-11-04** · Current phase: **11a (signed provisioning API, plans, billing webhooks) done** · Next: **Phase 12 (Customer Panel) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API.
+
+## Phase 11a report (signed provisioning API, technical plans, billing webhooks)
+
+Design: [ADR-0014](docs/adr/0014-provisioning-api.md). Evidence: `System tests` run 41800723205 and `CI` run
+41800723043 (commit `749d022`, 2026-11-04, all jobs passed). System tests run 41798973962 failed only on the Fleet
+step's lease check, which predated the new `provisioning` loop lease; the expectation was updated.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| API clients (`settings.write` + re-auth): secret shown once and encrypted; scopes `provisioning.read` / `provisioning.write` limited to the creator's current permissions; optional source networks and webhook URL; disable or delete | e2e test (auditor refused, read-only client gets 403, disabled client 401) |
+| Signed requests: HMAC-SHA256 over method, path and query, timestamp, nonce and body hash; 5-minute window; each nonce accepted once | e2e test (bad signature, old timestamp, tampered query, replay all 401); Ubuntu CI with `openssl`: signed call 200, the same nonce again 401, unsigned 401 |
+| Idempotency: POST/DELETE need `Idempotency-Key`; replay returns the stored response, a different body gives 422; one service per (client, `external_id`) | store contract, e2e test; Ubuntu CI: retry with the same key and with a new key gave the same service |
+| VPS plans without prices; node chosen by free memory when the plan names none | e2e test; Ubuntu CI |
+| Service lifecycle: provisioning → active → suspended → active → terminated (graceful shutdown, then forced off if needed); a client sees only its own services; the VPS and address are released on terminate | e2e test; Ubuntu CI under KVM: billed VPS active at 192.168.122.100, then terminated |
+| Signed webhooks through the job queue (`service.active`, `service.suspended`, `service.unsuspended`, `service.terminated`, `service.failed`) | e2e test (all four signatures verified); Ubuntu CI: `service.active` and `service.terminated` received, signature checked with `openssl` |
+| Audit entries carry `api_client` beside the creating user | e2e test; Ubuntu CI (`audit_logs`) |
+| Dashboard: Plans card (Infrastructure), API clients card (Settings) with the one-time secret | `tsc` |
+
+### Limitations
+
+* **Hosting backends (11b):** cPanel/WHM, Plesk, DirectAdmin and ISPConfig adapters are not implemented. They need
+  licensed or credentialed test installations.
+* **Billing-system modules:** there is no WHMCS, Blesta or HostBill module yet; the API is documented in OpenAPI.
+* **Plans:** only VPS plans; no shared hosting, e-mail or DNS products. No usage metering, by design.
+* **Webhooks:** they may arrive out of order and at least once; receivers should use `event_id` and `at`.
+* **Dashboard:** the API clients and Plans cards were type-checked but not clicked through in a browser this phase.
 
 ## Phase 10a report (Provider Mode: infrastructure and libvirt/KVM VPS)
 
@@ -409,5 +437,7 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 9a | Server groups, fleet batches, PostgreSQL job queue, loop leases, optional Redis rate limits | ✅ Done (multi-instance HA not tested) |
 | 10a | Provider Mode: data centers, racks, nodes, IP pools, templates, libvirt/KVM VPS lifecycle | ✅ Done (bridged networking NOT_TESTED) |
 | 10b | Proxmox VE adapter, more hypervisors | Pending (needs a Proxmox test server) |
-| 11 | Hosting backends, technical templates, signed provisioning API | ⏭ Next |
-| 12–14 | See [TASKS.md](TASKS.md) | Not started |
+| 11a | Signed provisioning API (HMAC, nonce, idempotency), VPS plans, billing webhooks | ✅ Done |
+| 11b | Web hosting backend adapters (cPanel, Plesk, DirectAdmin …) | Pending (needs licensed test installations) |
+| 12 | Customer Panel with tenant isolation | ⏭ Next |
+| 13–14 | See [TASKS.md](TASKS.md) | Not started |

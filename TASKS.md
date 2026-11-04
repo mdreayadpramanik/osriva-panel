@@ -139,6 +139,17 @@
 - [ ] Resize, rebuild, snapshots, migration, web console
 - [ ] Other cloud images (Debian, Rocky, Alma) verified
 
+## Phase 11a: Provisioning API (done)
+
+- [x] API clients with scopes, source networks, webhook URL; secret shown once (System tests run 41800723205)
+- [x] Signed requests (HMAC-SHA256, 5-minute window, single-use nonces), Idempotency-Key, unique external ids (System tests run 41800723205)
+- [x] VPS plans without prices; provision, suspend, unsuspend, reboot, terminate (System tests run 41800723205)
+- [x] Signed webhooks for billing systems through the job queue (System tests run 41800723205)
+- [ ] Web hosting backend adapters: cPanel/WHM, Plesk, DirectAdmin, ISPConfig (11b, needs test installations)
+- [ ] WHMCS / Blesta / HostBill modules built on the API
+- [ ] Shared hosting, e-mail and DNS products in plans
+- [ ] Generated API client from the OpenAPI spec (`packages/api-client`)
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters
