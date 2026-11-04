@@ -16,7 +16,8 @@
 - [x] OpenAPI ↔ router contract test (every /api/v1 route documented; Phase 9a)
 - [ ] Generate `packages/api-client` from the spec
 - [ ] Playwright e2e: login, MFA, user CRUD, audit
-- [ ] ESLint for the dashboard; `govulncheck` in CI
+- [x] `govulncheck` in CI (Phase 14a)
+- [ ] ESLint for the dashboard
 - [ ] Admin password reset, MFA recovery codes, TOTP QR code
 - [ ] Audit log CSV export
 
@@ -44,7 +45,7 @@
 - [x] Docker Compose stack verified end to end (Ubuntu 24.04 CI runner)
 - [ ] Installer on Debian, RHEL family, SUSE; `--install-docker` beyond Ubuntu
 - [ ] Let's Encrypt with a real domain on a long-lived VPS
-- [ ] Signed release artifacts + checksums (cosign / minisign), GitHub release workflow, published container images
+- [~] Signed release artifacts + checksums (Sigstore keyless), GitHub release workflow: dry run verified (Phase 14a); nothing published yet
 - [ ] Agent self-update from the panel
 
 ## Phase 3a: Tasks, metrics, services, processes (done)
@@ -169,6 +170,19 @@
 - [ ] Windows job objects so plugin children are killed too
 - [ ] DNS, backup-storage and hosting-backend extension points
 - [ ] Plugin directory in the Compose stack and a system-test step
+
+## Phase 14a: Audit, performance, compatibility, release (done)
+
+- [x] govulncheck in CI; Go 1.26.10 minimum (finding fixed; CI run 41840856234)
+- [x] Route-wide authentication and CSRF test (140 routes)
+- [x] Internal security review: docs/security-audit.md
+- [x] PostgreSQL performance test with 300 servers (CI run 41840856234)
+- [x] linux/arm64 runner and six distribution containers (CI run 41840856234)
+- [x] Release workflow, Sigstore keyless signatures, verified dry run (Release run 41840910281)
+- [ ] Independent security audit, penetration test, fuzzing
+- [ ] Publish a first pre-release (tag path not run yet); SBOM and licence report
+- [ ] Batch the alert evaluation queries (linear cost per rule × server)
+- [ ] Installer and tasks on distributions other than Ubuntu 24.04
 
 ## Phases 5–14 (summary; expanded when each phase starts)
 

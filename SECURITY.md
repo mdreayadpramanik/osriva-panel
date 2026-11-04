@@ -52,6 +52,10 @@ a security contact address and a PGP key.)*
 | Fleet and jobs | Batches only for an allowlist of task types (no file, container, app, site or backup tasks), each server task checked like a single one (permission class, re-auth once per batch, audit with the batch id), at most 200 servers; job payloads hold only ids; webhook retries keep one delivery id so receivers can drop duplicates; groups used by alert rules cannot be deleted (no silent widening to all servers) | `fleet/groups.go`, `internal/jobs`, ADR-0012 |
 | Installer | `plan` changes nothing; every change needs confirmation (or `--yes`); secrets generated locally into a 0600 file; verified database backup before upgrades with automatic rollback; `--purge` requires a typed confirmation; never touches firewall, SSH, disk or network settings | `installer/osriva-install.sh` |
 
+## Audit status
+
+An internal review with automated checks was completed in Phase 14a ([docs/security-audit.md](docs/security-audit.md)). It found and fixed one issue: the pinned Go toolchain had reachable standard-library vulnerabilities. **No independent third-party audit has been done.**
+
 ## Known limitations and risks
 
 * **Rate limiting and lockout are in-process unless `OSRIVA_REDIS_URL` is set.** With

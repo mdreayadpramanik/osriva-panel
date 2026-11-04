@@ -201,3 +201,12 @@ None are integrated yet. Each one is added here as its adapter lands (Phases 4bâ
 | Plugin runner on Linux (amd64) | SUPPORTED | CI run 41834145603 (real plugin processes, race detector) |
 | Plugin runner on Windows (amd64) | PARTIALLY_SUPPORTED | Same tests passed on Windows 11 locally; children of a timed-out plugin are not killed |
 | Example chat-notifier â†’ Slack / Mattermost / Rocket.Chat | NOT_TESTED | The incoming-webhook format only; tested against a local receiver |
+
+## Additional platforms (Phase 14a)
+
+"CI run 41840856234" is the `CI` workflow at commit `748baf4` (2026-11-04).
+
+| Platform | Scope | Status | Evidence |
+|----------|-------|--------|----------|
+| Linux arm64 (Ubuntu 24.04 runner) | agent tests, real inventory | SUPPORTED | CI run 41840856234 |
+| Debian 12, Rocky Linux 9, AlmaLinux 9, Alpine 3.20, openSUSE Leap 15.6, Fedora 41 | inventory and OS detection only (containers) | PARTIALLY_SUPPORTED | CI run 41840856234; installer, systemd and tasks NOT_TESTED there |

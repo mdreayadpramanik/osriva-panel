@@ -15,7 +15,7 @@ const phases: { phase: number; title: string; status: "available" | "in-progress
   { phase: 11, title: "Provisioning", status: "in-progress", items: ["Technical plans (no prices)", "Signed provisioning API: HMAC, nonce, idempotency", "Signed webhooks for billing systems", "Web hosting backend adapters (planned)"] },
   { phase: 12, title: "Customer Panel", status: "in-progress", items: ["Separate customer accounts, sessions and login", "Strict tenant isolation (own VPS only)", "Start, shut down, reboot", "Websites, backups and MFA for customers (planned)"] },
   { phase: 13, title: "Ecosystem", status: "in-progress", items: ["Out-of-process plugin SDK (Apache-2.0)", "Signed manifests, pinned approvals", "Notifier plugins for alert channels", "DNS, storage and hosting adapters as plugins (planned)"] },
-  { phase: 14, title: "Release", status: "planned", items: ["Security audit", "Performance & compatibility testing", "Signed releases"] },
+  { phase: 14, title: "Release", status: "in-progress", items: ["Internal security audit (govulncheck, route-wide auth test)", "Performance test (300 servers on PostgreSQL)", "arm64 and distribution checks", "Signed releases: dry run verified; independent audit and first release pending"] },
 ];
 
 export default function RoadmapPage() {

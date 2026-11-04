@@ -1,10 +1,71 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **13a (plugin SDK, signed manifests) done** · Next: **Phase 14 (security audit, performance, release) or the pending 5b / 6b / 7b / 8b / 10b / 11b items**
+Last updated: **2026-11-04** · Current phase: **14a (security audit, performance, compatibility, release dry run) done** · Next: **owner decisions: publish a first pre-release; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
 inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API, and give customers their own panel for the VPS they own.
+
+## Phase 14a report (security audit, performance, compatibility, release dry run)
+
+Owner decisions: Sigstore keyless signing, and a dry run only (no published release). Evidence: `CI` run 41840856234,
+`System tests` run 41840856055 and `Release` dry run 41840910281 (commit `748baf4`, 2026-11-04, all jobs passed). CI run
+41838015296 found a real security issue (below); release dry run 41838065000 had been built with the affected Go
+release and was not published.
+
+### Security (internal review, not an independent audit)
+
+Report: [docs/security-audit.md](docs/security-audit.md).
+
+| Check | Result |
+|-------|--------|
+| `govulncheck` in CI | **Finding fixed:** `go.mod` pinned `go 1.26.0`, which has reachable `crypto/x509` (GO-2026-6809) and `net/http` (GO-2026-6612, 6613, 6617) vulnerabilities. The minimum is now `go 1.26.10`, and the release log shows `go1.26.10`. Now: 0 vulnerabilities affecting the code. |
+| Route-wide authentication test | 140 routes checked; no gaps (`authz_audit_test.go`) |
+| `npm audit --omit=dev` | 0 vulnerabilities |
+| Manual review: command execution, SQL, body limits, secrets, comparisons, cookies, XSS, redirects, generated XML, archives | No issue found; accepted risks are listed in the report |
+
+### Performance (PostgreSQL 17 on the GitHub runner, 300 servers, 32 workers)
+
+| Measurement | Result |
+|-------------|--------|
+| Metrics ingestion (60 samples per server in one batch) | 15 499 samples/s |
+| One server's 1-hour chart read | p50 0.42 ms, p95 0.52 ms |
+| 300 agents polling at once (one task each) | 12.3 ms per poll; no task handed out twice |
+| Fleet list (300 servers) | p50 1.5 ms |
+| Alert evaluation, 3 fleet-wide rules × 300 servers | 932 ms (812 ms second pass); 45 of 45 expected alerts fired |
+
+These numbers come from one CI run. They show the order of magnitude, not a capacity guarantee. Alert evaluation makes
+per-rule, per-server queries and grows linearly, about 3 ms per rule and server, so with the 30-second cycle it becomes
+the first bottleneck at a few thousand servers × rules. Batching those queries is open work.
+
+### Compatibility
+
+| Platform | Result |
+|----------|--------|
+| linux/arm64 (GitHub `ubuntu-24.04-arm` runner) | agent and shared-package tests passed; real inventory reports `arm64` |
+| Inventory and OS detection in containers | Debian 12, Rocky Linux 9.3, AlmaLinux 9.8, Alpine 3.20, openSUSE Leap 15.6 and Fedora 41 identified correctly |
+
+The container runs check inventory parsing only. They do not cover the installer, systemd or tasks on those
+distributions.
+
+### Release dry run (Sigstore keyless)
+
+| Step | Result |
+|------|--------|
+| 9 agent builds, 2 API builds, 3 `osriva-plugin` builds, installer, `SHA256SUMS` | built with `-trimpath`, version embedded |
+| `cosign sign-blob` (keyless, GitHub OIDC) | Rekor transparency-log entry created |
+| `cosign verify-blob` with the exact workflow identity, then `sha256sum -c` | `Verified OK`, every file OK |
+| A tampered checksum list, and a different signer identity | both refused |
+| Container images (API, dashboard) | built, not pushed |
+
+### Not done / limitations
+
+* **No independent audit:** no third-party audit, penetration test or fuzzing yet.
+* **Release:** no release was published. The tag path (GHCR push, image signing, GitHub pre-release) has never run.
+  SBOM and licence report are missing.
+* **Verbatim licence texts:** the AGPL-3.0 and Apache-2.0 texts are still to be added from the official sources (Phase 1
+  item).
+* **Remaining items needing owner input:** 5b, 7b, 10b and 11b need credentials or test servers; 6b and 8b are open.
 
 ## Phase 13a report (out-of-process plugin SDK, signed manifests)
 
@@ -499,4 +560,4 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 11b | Web hosting backend adapters (cPanel, Plesk, DirectAdmin …) | Pending (needs licensed test installations) |
 | 12a | Customer Panel: separate accounts and sessions, own VPS only, start / shutdown / reboot | ✅ Done |
 | 13a | Out-of-process plugin SDK (Apache-2.0), signed manifests, notifier plugins, adapter docs | ✅ Done (no OS sandbox) |
-| 14 | Security audit, performance and compatibility testing, release | ⏭ Next |
+| 14a | Internal security audit, performance test, arm64 and distro checks, signed release dry run | ✅ Done (no external audit, nothing published) |
