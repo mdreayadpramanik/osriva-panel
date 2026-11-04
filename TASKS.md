@@ -128,6 +128,17 @@
 - [ ] Staged rollouts, scheduled batches, stop on failure (with automation, 8b)
 - [ ] Fleet health overview (agent versions, certificate expiry, outdated agents)
 
+## Phase 10a: Provider Mode (done)
+
+- [x] Data centers, racks, nodes, IPv4 pools, VM templates; `provider.read` / `provider.write`; Provider Mode required (System tests run 41682706322)
+- [x] libvirt/KVM VPS: create from a verified cloud image with cloud-init, start, shutdown, reboot, force stop, delete (System tests run 41682706322: real VM reached over SSH)
+- [x] Address allocation and release, capacity with overcommit, serial console log (System tests run 41682706322)
+- [ ] Proxmox VE adapter (10b, needs a test server and API token)
+- [ ] OpenStack, CloudStack, vSphere adapters
+- [ ] Bridged / VLAN networking, IPv6, several NICs
+- [ ] Resize, rebuild, snapshots, migration, web console
+- [ ] Other cloud images (Debian, Rocky, Alma) verified
+
 ## Phases 5–14 (summary; expanded when each phase starts)
 
 5. Websites/vhosts, reverse proxy, ACME SSL, DNS adapters

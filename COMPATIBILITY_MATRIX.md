@@ -160,3 +160,17 @@ None are integrated yet. Each one is added here as its adapter lands (Phases 4bâ
 | Job queue and leases on PostgreSQL 17 | SUPPORTED | CI run 41638738815 (store contract), System tests run 41638738285 |
 | Shared rate limits with Redis 7 | PARTIALLY_SUPPORTED | Go tests against Redis 7 in CI run 41638738815; not in the Compose stack |
 | Several API instances behind a load balancer | NOT_TESTED | Designed for it (leases, SKIP LOCKED, Redis); never run end to end |
+
+## Provider Mode virtualization (Phase 10a)
+
+"System tests run 41682706322" is the `System tests` workflow at commit `cb9be7b` (2026-11-03).
+
+| Hypervisor / guest | Status | Evidence / notes |
+|--------------------|--------|------------------|
+| libvirt/KVM on Ubuntu 24.04 (libvirt NAT network `default`) | SUPPORTED | System tests run 41682706322 |
+| Guest: Ubuntu 24.04 minimal cloud image | SUPPORTED | System tests run 41682706322 (cloud-init, SSH key, static address) |
+| libvirt/KVM on other distributions, bridged networks with public addresses | NOT_TESTED | Same tools (`virsh`, `qemu-img`, `genisoimage`); never run |
+| Other guests (Debian, Rocky, Alma cloud images) | NOT_TESTED | NoCloud + virtio are standard; not verified |
+| Proxmox VE | UNSUPPORTED | Phase 10b (needs a test server) |
+| OpenStack, CloudStack, vSphere | UNSUPPORTED | Not implemented |
+| Nodes on Windows, BSD, macOS | UNSUPPORTED | `vm.host` reports the reason (checked on Windows 11) |

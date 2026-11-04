@@ -1,10 +1,49 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-03** · Current phase: **9a (server groups, fleet batches, job queue) done** · Next: **Phase 10 (Provider Mode) or the pending 5b / 6b / 7b / 8b items**
+Last updated: **2026-11-04** · Current phase: **10a (Provider Mode, libvirt/KVM VPS) done** · Next: **Phase 11 (hosting backends, provisioning API) or the pending 5b / 6b / 7b / 8b / 10b items**
 
 **OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
-inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, and group servers to run one task across many of them.
+inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes.
+
+## Phase 10a report (Provider Mode: infrastructure and libvirt/KVM VPS)
+
+Design: [ADR-0013](docs/adr/0013-provider-mode-libvirt.md). The owner chose libvirt/KVM as the first adapter because
+it can be verified in CI; Proxmox VE follows when a test server is available. Evidence: `System tests` run 41682706322
+and `CI` run 41682706833 (commit `cb9be7b`, 2026-11-03, all jobs passed).
+
+The system test found two real bugs, both fixed:
+
+* **Run 41647344934:** under the agent's umask 0077 the image directory was 0700, so QEMU could not open the disk.
+  The directories are now set to 0711 explicitly.
+* **Run 41658143268:** the guest's console log showed it booting as `ubuntu` with no cloud-init output. The minimal
+  image's `linux-kvm` kernel has no SATA driver, so the seed CD-ROM was invisible; it is now a read-only virtio disk.
+
+### Implemented and tested
+
+| Feature | Evidence |
+|---------|----------|
+| Data centers, racks, nodes (enrolled Linux servers), IPv4 pools, templates; anything still referenced cannot be deleted | store contract (memory + PostgreSQL 17), e2e test; Ubuntu CI |
+| `provider.read` / `provider.write`; changes need Hosting Provider Mode | e2e test (refused in Personal Mode, auditor refused) |
+| Address allocation: lowest free address, gateway skipped, unique per pool (safe under concurrency), released on delete | store contract, e2e test (pool exhausted); Ubuntu CI: 192.168.122.100 allocated and released |
+| Capacity: inventory × overcommit (default 4:1 vCPU, 1:1 memory) | e2e test; Ubuntu CI: a 64-vCPU VPS refused |
+| `vm.create`: HTTPS image verified against the publisher's SHA-256, qcow2 overlay, NoCloud seed (hostname, SSH keys, static address), domain with OSRIVA metadata | unit tests (domain XML, cloud-init, checksum mismatch, damaged cache); Ubuntu CI under KVM: Ubuntu 24.04 minimal booted, SSH with the injected key, hostname and address from cloud-init, password login refused |
+| Start, graceful shutdown, reboot, force stop (re-auth); delete with re-auth and the typed name removes the domain and disk | unit tests (foreign domains refused, files removed); e2e test (failed operations restore the state); Ubuntu CI: shutdown → stopped, start → SSH again, delete → domain and disk gone, libvirt network untouched |
+| Serial console log per VPS (`/var/log/libvirt/qemu/osriva-<id>-console.log`) | Ubuntu CI (used to find the seed bug) |
+| Dashboard Infrastructure and VPS pages (Provider Mode only), host check | `tsc`; browser on Windows 11: data center created, a Windows server refused as a node ("libvirt/KVM nodes must run Linux"); `vm.host` on Windows reports unsupported |
+
+### Limitations
+
+* **Hypervisors:** libvirt/KVM on Linux only. The Proxmox VE adapter (10b) needs a test server and API token from the
+  owner; OpenStack, CloudStack and vSphere are not implemented.
+* **Networking:** IPv4 only, one NIC, the node's existing libvirt network. CI used the `default` NAT network; bridged
+  networks with public addresses on a real data-center host are NOT_TESTED.
+* **Not implemented:** resize, rebuild, snapshots, live migration, console access in the dashboard, bandwidth and
+  usage accounting. No billing, by design.
+* **Capacity and disk:** capacity trusts the node's inventory report. Disk space is checked only roughly before
+  creating the overlay.
+* **Tested images:** only Ubuntu 24.04 minimal. Other cloud images are expected to work with NoCloud and virtio but
+  are NOT_TESTED.
 
 ## Phase 9a report (server groups, fleet batches, job queue, leases, shared rate limits)
 
@@ -368,5 +407,7 @@ settings, dashboard core. PostgreSQL 17 store contract tests pass in CI.
 | 8a | Alerts, webhooks, e-mail, metric rollups, audit retention | ✅ Done |
 | 8b | Automation, silences, maintenance windows | Pending (notification queue done in 9a) |
 | 9a | Server groups, fleet batches, PostgreSQL job queue, loop leases, optional Redis rate limits | ✅ Done (multi-instance HA not tested) |
-| 10 | Provider Mode (data centers, nodes, Proxmox adapter) | ⏭ Next |
-| 11–14 | See [TASKS.md](TASKS.md) | Not started |
+| 10a | Provider Mode: data centers, racks, nodes, IP pools, templates, libvirt/KVM VPS lifecycle | ✅ Done (bridged networking NOT_TESTED) |
+| 10b | Proxmox VE adapter, more hypervisors | Pending (needs a Proxmox test server) |
+| 11 | Hosting backends, technical templates, signed provisioning API | ⏭ Next |
+| 12–14 | See [TASKS.md](TASKS.md) | Not started |

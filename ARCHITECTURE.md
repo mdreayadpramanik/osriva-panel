@@ -221,5 +221,9 @@ in its own migration. There are **no** billing/payment/invoice/subscription tabl
 * **Job queue (Phase 9a, implemented):** PostgreSQL `jobs` table claimed with
   `SELECT … FOR UPDATE SKIP LOCKED`, leases and exponential back-off
   ([ADR-0012](docs/adr/0012-fleet-groups-queue.md)). Used for alert notifications.
+* **Provider Mode (Phase 10a, implemented):** data centers, racks, hypervisor nodes,
+  IPv4 pools and templates in the panel; VPS run on libvirt/KVM nodes through typed
+  `vm.*` agent tasks ([ADR-0013](docs/adr/0013-provider-mode-libvirt.md)). Proxmox VE
+  and other hypervisors are planned adapters.
 * **Adapters/plugins (Phase 13):** out-of-process plugins over gRPC/stdio with a
   signed manifest, so third-party code never runs inside the Core API process.
