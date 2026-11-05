@@ -1,6 +1,6 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-05** · Current release: **v1.0.1** (bug fixes on top of v1.0.0, a full release on the owner's decision) · Phase **15a** (production hardening) done · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
+Last updated: **2026-11-05** · Current release: **v1.0.1** (bug fixes on top of v1.0.0, a full release on the owner's decision; Release run 42032837297) · Phase **15a** (production hardening) done · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
 
 **v1.0.0 is a full release, published on the owner's decision** before an independent security review and
 before a soak test on real hosts (both open in [docs/production-checklist.md](docs/production-checklist.md)); everything
