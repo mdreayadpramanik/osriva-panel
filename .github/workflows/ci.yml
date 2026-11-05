@@ -45,15 +45,17 @@ jobs:
       - run: go build -o /dev/null ./services/api/cmd/osriva-api
       - name: Known vulnerabilities (govulncheck)
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
-      - name: Fuzz the security parsers (30 s each)
+      - name: Fuzz the security parsers (fixed run counts, about 30 s each)
+        # Counts instead of -fuzztime: a time limit can end a run with "context deadline
+        # exceeded" while a worker is busy, a false failure with no failing input.
         run: |
           set -e
           for t in FuzzValidate FuzzValidRelPath FuzzValidGitRef FuzzValidGitURL FuzzURLValidators FuzzHostnames; do
-            go test ./pkg/agenttask -run '^$' -fuzz "^$t\$" -fuzztime 30s
+            go test ./pkg/agenttask -run '^$' -fuzz "^$t\$" -fuzztime 1000000x
           done
-          go test ./pkg/pluginsdk -run '^$' -fuzz '^FuzzManifestSignature$' -fuzztime 30s
-          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzGuardCheck$' -fuzztime 30s
-          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzExtract$' -fuzztime 30s
+          go test ./pkg/pluginsdk -run '^$' -fuzz '^FuzzManifestSignature$' -fuzztime 200000x
+          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzGuardCheck$' -fuzztime 100000x
+          go test ./agent/internal/tasks -run '^$' -fuzz '^FuzzExtract$' -fuzztime 30000x
       - name: Performance on PostgreSQL 17 (300 servers)
         run: OSRIVA_PERF=1 OSRIVA_PERF_OUT="$PWD/perf.json" go test -count=1 -run TestPerformance -v ./services/api/internal/store/postgres/
       - uses: actions/upload-artifact@v4
