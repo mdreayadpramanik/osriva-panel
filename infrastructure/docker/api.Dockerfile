@@ -10,7 +10,7 @@ COPY migrations ./migrations
 COPY pkg ./pkg
 COPY services ./services
 COPY agent ./agent
-ARG VERSION=1.0.0-dev
+ARG VERSION=1.0.1-dev
 ARG AGENT_TARGETS="linux/amd64 linux/arm64 linux/arm windows/amd64 windows/arm64 freebsd/amd64 freebsd/arm64 openbsd/amd64 netbsd/amd64"
 ENV CGO_ENABLED=0
 RUN go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/osriva-api ./services/api/cmd/osriva-api

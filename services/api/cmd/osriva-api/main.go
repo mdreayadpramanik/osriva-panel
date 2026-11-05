@@ -42,7 +42,7 @@ import (
 )
 
 // version is set at build time: -ldflags "-X main.version=1.2.3".
-var version = "1.0.0-dev"
+var version = "1.0.1-dev"
 
 const usage = `OSRIVA Panel Core API
 
