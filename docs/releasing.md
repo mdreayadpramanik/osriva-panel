@@ -14,6 +14,7 @@ Releases are built by `.github/workflows/release.yml`.
 
 | Version | Date | Notes |
 |---------|------|-------|
+| [v1.0.0](https://github.com/mdreayadpramanik/osriva-panel/releases/tag/v1.0.0) | 2026-11-05 | First **full release**, on the owner's decision. Released without an independent security review or a soak test on real hosts; what is and is not tested is in DEVELOPMENT_STATUS.md. Release run RELEASE_RUN_V1. |
 | [v0.1.0](https://github.com/mdreayadpramanik/osriva-panel/releases/tag/v0.1.0) | 2026-11-04 | First **pre-release**, not production-ready. Release run 41846227536. Signature and checksums verified independently with cosign 2.4.1 on Windows 11. The images `ghcr.io/mdreayadpramanik/osriva-panel/{api,dashboard}:0.1.0` are signed (Rekor entries 3690534729 and 3690535048) but still **private** on GHCR, so pulling them needs a GitHub login until the owner makes the packages public. |
 
 ## Verifying a download
@@ -66,5 +67,7 @@ cosign verify ghcr.io/mdreayadpramanik/osriva-panel/api:0.1.0 \
 4. New GHCR packages start out private. Make them public under the package settings on
    GitHub if anyone should be able to pull them.
 
-OSRIVA Panel is not production-ready, so releases stay pre-releases until an independent
-audit and the remaining open items are done.
+Tags with a suffix (for example `v1.1.0-rc1`) are published as pre-releases, plain
+version tags (`v1.0.0`) as full releases. v1.0.0 was published as a full release on the
+owner's decision, before an independent security review and before a soak test on
+real hosts (docs/production-checklist.md lists both as still open).

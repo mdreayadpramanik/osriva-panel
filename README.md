@@ -8,7 +8,7 @@ websites, CMSs, applications and hosting infrastructure from the browser. It has
 operating modes, **Personal Server Mode** and **Hosting Provider Mode**, plus a separate
 **Customer Panel**. It has no paid editions, no license keys and no billing.
 
-> **Status: pre-release (v0.1.0; all 14 phases have a first part, plus production hardening).**
+> **Status: v1.0.0, a full release on the owner's decision (all 14 phases have a first part, plus production hardening).**
 > Servers are connected through the OSRIVA Agent and managed from the browser:
 > * **Basics:** metrics, logs, services, processes, files, SSH keys and host settings.
 > * **Apps and sites:** Docker, Git deployments, websites behind Caddy with automatic HTTPS, WordPress.

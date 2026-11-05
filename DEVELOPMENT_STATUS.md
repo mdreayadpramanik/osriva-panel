@@ -1,8 +1,10 @@
 # OSRIVA Panel — Development status
 
-Last updated: **2026-11-04** · Current phase: **15a done (production hardening), still a pre-release** · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
+Last updated: **2026-11-05** · Current release: **v1.0.0** (full release on the owner's decision) · Phase **15a** (production hardening) done · Next: **owner decisions: GHCR image visibility, external audit; credentials for 5b / 7b / 10b / 11b; 6b / 8b**
 
-**OSRIVA Panel is not production-ready.** It can be installed, enrol servers, show live
+**v1.0.0 is a full release, published on the owner's decision** before an independent security review and
+before a soak test on real hosts (both open in [docs/production-checklist.md](docs/production-checklist.md)); everything
+below states exactly what is tested and what is not. It can be installed, enrol servers, show live
 metrics and logs, list services and processes, control services, and browse and edit files
 inside each agent's allowed directories, manage SSH keys, view users, scheduled tasks, host name and timezone, manage Docker containers and images, deploy apps from Git with history and rollback, serve them on domains through a managed Caddy proxy with automatic HTTPS, install and maintain WordPress, take encrypted, verified backups with tested restores, alert by signed webhook or e-mail with retries, group servers to run one task across many of them, and in Hosting Provider Mode create, control and delete KVM virtual machines on libvirt nodes, also from an external billing system through a signed API, and give customers their own panel for the VPS they own.
 
