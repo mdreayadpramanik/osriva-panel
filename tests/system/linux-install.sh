@@ -486,6 +486,9 @@ sudo docker rm -f ci-mail >/dev/null
 step "Plugins: a signed notifier mounted into the API container, approved, delivering; a changed binary stops"
 sudo test -d /etc/osriva/plugins || fail "the installer did not create /etc/osriva/plugins"
 api GET /plugins | jq -e '.enabled == false' >/dev/null || fail "plugins enabled without trusted keys"
+PLUGHOOKS="$(mktemp)"
+python3 "$(dirname "$0")/webhook-receiver.py" 18096 "$PLUGHOOKS" &
+PLUGHOOK_PID=$!
 PL="$(mktemp -d)"; mkdir -p "$PL/chat-notifier"
 (cd "$ROOT" && CGO_ENABLED=0 go build -o "$PL/osriva-plugin" ./pkg/pluginsdk/cmd/osriva-plugin &&
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o "$PL/chat-notifier/chat-notifier" ./pkg/pluginsdk/examples/chat-notifier)
@@ -500,7 +503,7 @@ login
 api GET /plugins | jq -e '.enabled and ([.plugins[] | select(.name == "chat-notifier" and .valid and (.enabled | not))] | length == 1)' >/dev/null || fail "plugin not listed as valid"
 api POST /auth/reauth "$(jq -nc --arg p "$PASSWORD" '{password:$p}')" >/dev/null || fail "re-auth"
 api PUT /plugins/chat-notifier '{"enabled":true}' | jq -e '.runnable' >/dev/null || fail "approve plugin"
-PC_ID="$(api POST /alerts/channels "$(jq -nc --arg u "http://$GW:18099/hook/PLUGIN" '{name:"ci plugin",kind:"plugin",enabled:true,config:{plugin:"chat-notifier",settings:{url:$u}}}')" | jq -r .channel.id)"
+PC_ID="$(api POST /alerts/channels "$(jq -nc --arg u "http://$GW:18096/hook/PLUGIN" '{name:"ci plugin",kind:"plugin",enabled:true,config:{plugin:"chat-notifier",settings:{url:$u}}}')" | jq -r .channel.id)"
 PT="$(api POST "/alerts/channels/$PC_ID/test")"
 jq -e '.delivered == 1' <<<"$PT" >/dev/null || {
 	echo "$PT"
@@ -509,13 +512,13 @@ jq -e '.delivered == 1' <<<"$PT" >/dev/null || {
 	sudo docker compose --project-name osriva --env-file /etc/osriva/osriva.env -f /opt/osriva/current/docker-compose.yml logs --tail 30 api | grep -i plugin || true
 	fail "plugin test delivery"
 }
-jq -se '[.[] | select(.path == "/hook/PLUGIN") | .body | @base64d | fromjson | .text | select(contains("Test notification"))] | length == 1' "$HOOKS" >/dev/null || fail "the plugin's message did not arrive"
+jq -se '[.[] | select(.path == "/hook/PLUGIN") | .body | @base64d | fromjson | .text | select(contains("Test notification"))] | length == 1' "$PLUGHOOKS" >/dev/null || fail "the plugin's message did not arrive"
 # One byte appended to the approved binary: it must not run any more.
 echo x | sudo tee -a /etc/osriva/plugins/chat-notifier/chat-notifier >/dev/null
 api POST /plugins/rescan >/dev/null
 ! api POST "/alerts/channels/$PC_ID/test" 2>/dev/null | jq -e '.delivered == 1' >/dev/null || fail 'a changed plugin binary still ran'
 api DELETE "/alerts/channels/$PC_ID" >/dev/null
-kill "$HOOK_PID" 2>/dev/null || true
+kill "$PLUGHOOK_PID" 2>/dev/null || true
 
 step "Fleet: server groups, a batch across the group, queued notification retries, leases"
 login

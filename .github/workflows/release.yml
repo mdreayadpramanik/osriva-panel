@@ -5,8 +5,8 @@
 #   keeps the files as a workflow artifact. Nothing is published as a GitHub Release
 #   or container image. Signing still records an entry in Sigstore's public
 #   transparency log.
-# push of a v* tag: the same, then a GitHub pre-release and images on GHCR.
-#   This path has not been run yet.
+# push of a v* tag: the same, then a GitHub release and images on GHCR. A tag with a
+#   suffix (v1.1.0-rc1) becomes a pre-release; a plain version (v1.0.0) a full release.
 name: Release
 
 on:
@@ -140,10 +140,12 @@ jobs:
             digest="$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REPO/$img:${VERSION}")"
             cosign sign --yes "$digest"
           done
-      - name: Publish the GitHub pre-release (tags only)
+      - name: Publish the GitHub release (tags only)
         if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/* --prerelease --title "OSRIVA Panel ${VERSION}" \
-            --notes "Pre-release. Verify with docs/releasing.md. Development status: DEVELOPMENT_STATUS.md."
+          kind=(--latest); label="Release"
+          if [[ "$VERSION" == *-* ]]; then kind=(--prerelease); label="Pre-release"; fi
+          gh release create "${GITHUB_REF_NAME}" dist/* "${kind[@]}" --title "OSRIVA Panel ${VERSION}" \
+            --notes "${label}. Verify the files with docs/releasing.md. What is tested and what is not: DEVELOPMENT_STATUS.md."
