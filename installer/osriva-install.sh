@@ -622,6 +622,7 @@ cmd_restore() {
 		echo "  - the secret key is already the backup's; $ENV_FILE stays as it is"
 	fi
 	echo "  - keep this host's database password, domain and agent settings; apply pending migrations; verify"
+	echo "  - forget the last upgrade's rollback point (a rollback would otherwise replace the restored data)"
 	confirm "Proceed with the restore?" || die "aborted"
 	do_backup
 	if [ "$key" != "$cur_key" ]; then
@@ -634,6 +635,9 @@ cmd_restore() {
 		ok "secret key taken from the backup"
 	fi
 	restore_db "$dump"
+	# The previous release and its pre-upgrade dump belong to the state before the
+	# restore; rolling back to them would silently undo it.
+	rm -f "$PREFIX/previous" "$BACKUP_DIR/pre-upgrade"
 	compose up -d --force-recreate
 	wait_ready || die "the API did not become ready after the restore (previous state: $BACKUP_DIR/latest)"
 	do_verify
@@ -653,6 +657,7 @@ cmd_uninstall() {
 	[ -L "$PREFIX/current" ] || [ -d "$PREFIX" ] || die "not installed"
 	info "Uninstall plan"
 	echo "  - stop and remove the OSRIVA containers and $PREFIX"
+	[ -f "$UNIT_DIR/osriva-backup.timer" ] && echo "  - remove the daily backup timer (it runs a script inside $PREFIX)"
 	if [ "$PURGE" -eq 1 ]; then
 		echo "  - ${R}PERMANENTLY DELETE${N} the database volume, $CONF_DIR (secret key) and $BACKUP_DIR"
 	else
@@ -667,6 +672,7 @@ cmd_uninstall() {
 	if [ -L "$PREFIX/current" ]; then
 		if [ "$PURGE" -eq 1 ]; then compose down --volumes --remove-orphans; else compose down --remove-orphans; fi
 	fi
+	cmd_unschedule_backup
 	rm -rf "$PREFIX"
 	if [ "$PURGE" -eq 1 ]; then rm -rf "$CONF_DIR" "$BACKUP_DIR"; fi
 	ok "uninstalled"

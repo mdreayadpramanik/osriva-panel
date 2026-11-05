@@ -718,6 +718,9 @@ sudo test -f /etc/osriva/osriva.env.before-restore
 login
 ! api GET /server-groups | jq -e --arg id "$AFTER_ID" '[.groups[] | select(.id == $id)] | length > 0' >/dev/null || fail 'group created after the backup survived'
 wait_for 150 "server online after restore (agent CA decrypted with the restored key)" is_online
+# Rolling back now would replace the restored data with an older state: refused.
+! sudo "$INSTALLER" rollback --yes >/dev/null 2>&1 || fail 'rollback right after a restore was accepted'
+is_online || fail "the refused rollback changed something"
 
 step "backup retention, an off-host copy (a local directory here) and a daily systemd timer"
 OFFSITE=/tmp/osriva-offsite
@@ -785,7 +788,9 @@ sleep 15 # longer than RestartSec: it must not come back
 step "uninstall"
 sudo /usr/local/bin/osriva-agent service uninstall
 [ ! -e /etc/systemd/system/osriva-agent.service ]
+sudo "$INSTALLER" schedule-backup --keep 3 --yes >/dev/null # uninstall must take this away too
 sudo "$INSTALLER" uninstall --purge --yes
 [ ! -e /opt/osriva ] && [ ! -e /etc/osriva ]
+[ ! -e /etc/systemd/system/osriva-backup.timer ] && ! systemctl list-timers --all | grep -q osriva-backup || fail "uninstall left the backup timer behind"
 [ -z "$(sudo docker ps -aq --filter label=com.docker.compose.project=osriva)" ]
 echo; echo "SYSTEM TEST PASSED"

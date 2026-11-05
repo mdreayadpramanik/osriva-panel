@@ -4,6 +4,7 @@ package plugins
 
 import (
 	"os/exec"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -28,9 +29,10 @@ func isolate(cmd *exec.Cmd) (started func() error, done func()) {
 		_ = windows.CloseHandle(job)
 		return func() error { return err }, func() {}
 	}
-	assigned := false
+	// started runs in the caller's goroutine, Cancel in exec's context watcher.
+	var assigned atomic.Bool
 	cmd.Cancel = func() error {
-		if assigned {
+		if assigned.Load() {
 			return windows.TerminateJobObject(job, 1)
 		}
 		if cmd.Process != nil {
@@ -47,7 +49,7 @@ func isolate(cmd *exec.Cmd) (started func() error, done func()) {
 		if err := windows.AssignProcessToJobObject(job, h); err != nil {
 			return err
 		}
-		assigned = true
+		assigned.Store(true)
 		return nil
 	}
 	return started, func() { _ = windows.CloseHandle(job) }
