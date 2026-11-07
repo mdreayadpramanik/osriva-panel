@@ -1,0 +1,4 @@
+# Line endings: LF everywhere, also in Windows checkouts and `git archive`
+# exports. A source ZIP built on Windows with core.autocrlf=true once carried
+# CRLF, and Linux refused to run the installer ("/usr/bin/env: 'bash\r'").
+* text=auto eol=lf
