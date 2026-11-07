@@ -250,13 +250,50 @@ EOF
 wait_ready() {
 	local i
 	for i in $(seq 1 90); do
-		if compose exec -T caddy wget -qO- http://api:8080/readyz >/dev/null 2>&1 &&
-			https_get /api/v1/meta >/dev/null 2>&1 && https_get /login >/dev/null 2>&1; then
+		if stack_ready && https_get /api/v1/meta >/dev/null 2>&1 && https_get /login >/dev/null 2>&1; then
 			return 0
 		fi
 		sleep 2
 	done
 	return 1
+}
+
+# stack_ready: the API (with its database) and the dashboard answer inside the
+# stack, checked from the Caddy container. It needs no certificate.
+stack_ready() {
+	compose exec -T caddy wget -qO- http://api:8080/readyz >/dev/null 2>&1 &&
+		compose exec -T caddy wget -qO- http://dashboard:3000/login >/dev/null 2>&1
+}
+
+# wait_stack waits for stack_ready only (first install, repair): a missing
+# certificate must not stop the owner account from being created.
+wait_stack() {
+	local i
+	for i in $(seq 1 90); do
+		stack_ready && return 0
+		sleep 2
+	done
+	return 1
+}
+
+# wait_https gives a new certificate up to two minutes before the checks run.
+wait_https() {
+	local i
+	for i in $(seq 1 60); do
+		https_get /api/v1/meta >/dev/null 2>&1 && return 0
+		sleep 2
+	done
+	return 1
+}
+
+# https_hint explains the usual reason HTTPS fails on a new real domain.
+https_hint() {
+	[ "$DOMAIN" = localhost ] && return 0
+	warn "HTTPS for $DOMAIN does not work yet. Usually the certificate could not be issued:"
+	echo "    - DNS: $DOMAIN must point to this host's public IP address"
+	echo "    - ports 80 and 443 must reach this host from the internet (router or firewall forwarding)"
+	echo "    Caddy keeps retrying. Check its log: docker compose --project-name $PROJECT logs caddy"
+	echo "    Then run: sudo $0 verify"
 }
 
 # ---------- checks ----------
@@ -515,12 +552,18 @@ cmd_install() {
 	info "Building and starting containers (first build takes several minutes)"
 	compose up -d --build
 	info "Waiting for the API"
-	wait_ready || die "API did not become ready; inspect: docker compose --project-name $PROJECT logs api migrate"
+	wait_stack || die "API did not become ready; inspect: docker compose --project-name $PROJECT logs api migrate"
 	if [ -n "$ADMIN_EMAIL" ]; then
 		info "Creating the owner account"
 		compose run --rm -T --no-deps api admin create --email "$ADMIN_EMAIL" --name "Owner" --role owner
 	fi
-	do_verify
+	info "Waiting for HTTPS (a new certificate can take a minute)"
+	wait_https || true
+	if ! do_verify; then
+		https_hint
+		print_access
+		die "installed, but some checks failed (see above)"
+	fi
 	print_access
 }
 
@@ -649,8 +692,9 @@ cmd_repair() {
 	ensure_plugin_dir
 	confirm "Rebuild and recreate all containers of the current release?" || die "aborted"
 	compose up -d --build --force-recreate
-	wait_ready || die "API did not become ready"
-	do_verify
+	wait_stack || die "API did not become ready; inspect: docker compose --project-name $PROJECT logs api migrate"
+	wait_https || true
+	do_verify || { https_hint; die "the containers run, but some checks failed (see above)"; }
 }
 
 cmd_uninstall() {
@@ -698,7 +742,7 @@ plan) cmd_plan ;;
 install) cmd_install ;;
 upgrade) cmd_upgrade ;;
 repair) cmd_repair ;;
-verify) do_verify ;;
+verify) do_verify || { https_hint; exit 1; } ;;
 backup) cmd_backup ;;
 schedule-backup) cmd_schedule_backup ;;
 unschedule-backup) cmd_unschedule_backup ;;
