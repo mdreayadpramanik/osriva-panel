@@ -560,6 +560,7 @@ api DELETE "/server-groups/$GROUP_ID" >/dev/null || fail "delete group"
 step "Provider Mode: libvirt/KVM node, IP pool, Ubuntu cloud image, a real VPS reached over SSH, lifecycle, delete"
 # This disposable CI runner becomes a KVM host; on real hosts the agent never installs anything.
 [ -e /dev/kvm ] || fail "this runner has no /dev/kvm"
+sudo apt-get update -qq # the runner image's package lists go stale (404 from the mirror)
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq qemu-kvm libvirt-daemon-system genisoimage >/dev/null
 sudo systemctl start libvirtd
 sudo virsh -c qemu:///system net-info default >/dev/null 2>&1 || fail "libvirt default network missing"
